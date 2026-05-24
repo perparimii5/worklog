@@ -1,16 +1,10 @@
-# WorkLog Private v4
+# WorkLog Private v8 - Embedded PDF Photos
 
-Version personal i WorkLog me regjistrim të thjeshtuar:
+Ky version fut fotot e zgjedhura direkt brenda PDF-it te punedhenesit. Fotot nuk varen nga telefoni, cache ose localStorage kur PDF dergohet me WhatsApp, email ose hapet ne kompjuter.
 
-- Orë pune fleksibile me hapa 0.5h
-- Pa fusha fillimi/mbarimi/pauzë në regjistrimin ditor
-- Konfigurim page vetëm te cilësimet
-- Llogaritje bruto/neto orientuese
-- Overtime / minus ndaj kontratës
-- Backup / import JSON
-- PDF mujor më profesional
-
-Të dhënat ruhen lokalisht në pajisje. Bëj backup JSON rregullisht.
-
-
-Version v5: pa bruto/neto, pa overtime, me shumë foto provë për çdo ditë.
+Kryesore:
+- Employer PDF me foto te futura brenda dokumentit
+- Shtojce fotosh me nga nje foto per seksion
+- GPS, timestamp dhe shenime ne metadata
+- Te gjitha fotot e selektuara futen ne PDF, jo vetem 6
+- Cache i ri per GitHub Pages
