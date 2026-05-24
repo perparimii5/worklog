@@ -40,19 +40,54 @@ async function collectBackup(){
   const months={};
   try{const all=await idbAll();Object.entries(all).forEach(([k,v])=>{if(/^wr-\d{4}-\d{2}$/.test(k))months[k]=v})}catch{}
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)&&!months[k]){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{}}}
-  return{version:'private-v9-indexeddb-safe',exportedAt:new Date().toISOString(),months,settings:{defaultHours:localStorage.getItem('wr-default-hours')||'8',workerName:localStorage.getItem('wr-worker-name')||'',signature:localStorage.getItem('wr-signature')||'',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'}}
+  return{version:'private-v9-indexeddb-safe',exportedAt:new Date().toISOString(),months,settings:{defaultHours:localStorage.getItem('wr-default-hours')||'8',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'}}
 }
 async function applyBackup(b){
   if(!b||!b.months)throw Error('Backup jo valid');
   Object.keys(localStorage).filter(k=>/^wr-\d{4}-\d{2}$/.test(k)).forEach(k=>localStorage.removeItem(k));
   for(const [k,v] of Object.entries(b.months)){await idbSet(k,v||{});try{localStorage.setItem(k,JSON.stringify(lightData(v||{})))}catch{}}
-  if(b.settings){localStorage.setItem('wr-default-hours',b.settings.defaultHours||'8');localStorage.setItem('wr-worker-name',b.settings.workerName||'');if(b.settings.signature)localStorage.setItem('wr-signature',b.settings.signature);localStorage.setItem('rem-en',b.settings.reminderOn||'false');localStorage.setItem('rem-t',b.settings.reminderTime||'17:00')}
+  if(b.settings){localStorage.setItem('wr-default-hours',b.settings.defaultHours||'8');localStorage.setItem('rem-en',b.settings.reminderOn||'false');localStorage.setItem('rem-t',b.settings.reminderTime||'17:00')}
   await (async()=>{await load();render();})();
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),2200)}
 function typeName(t){return{work:'Punë',pushim:'Pushim',semure:'Sëmurë',leje:'Leje'}[t]||'Punë'}
 function render(){document.getElementById('monthName').textContent=MONTHS[M];document.getElementById('monthYear').textContent=Y;renderStats();renderTimeline();renderCalendar();renderSettings();}
-function renderStats(){let h=0,w=0,p=0,s=0,l=0,photos=0;Object.values(data).forEach(e=>{if(e.type==='work'){w++;h+=Number(e.hrs||0)}else if(e.type==='pushim')p++;else if(e.type==='semure')s++;else if(e.type==='leje')l++;photos+=(Array.isArray(e.photos)?e.photos.length:(e.photo?1:0))});let entries=Object.keys(data).length;document.getElementById('totalHours').textContent=fmtH(h)+'h';document.getElementById('workDays').textContent=w+' ditë pune';document.getElementById('totalEntries').textContent=entries;document.getElementById('photoCount').textContent=photos+' foto';document.getElementById('todayHint').textContent=new Date().toLocaleDateString('sq-CH');document.getElementById('statEntries').textContent=entries+'/'+daysInMonth();document.getElementById('monthProgress').style.width=Math.min(100,entries/daysInMonth()*100)+'%';document.getElementById('summaryRows').innerHTML=`<div class="row"><span>Punë</span><b>${w}</b></div><div class="row"><span>Pushim</span><b>${p}</b></div><div class="row"><span>Sëmurë</span><b>${s}</b></div><div class="row"><span>Leje</span><b>${l}</b></div><div class="row"><span>Foto</span><b>${photos}</b></div>`}
+function renderStats(){
+  let h=0,w=0,p=0,s=0,l=0,photos=0, jobs={};
+  Object.values(data).forEach(e=>{
+    if(e.type==='work'){
+      w++;
+      const hrs=Number(e.hrs||0);
+      h+=hrs;
+      const j=e.job||'Pa emër';
+      jobs[j]=(jobs[j]||0)+hrs;
+    }
+    else if(e.type==='pushim')p++;
+    else if(e.type==='semure')s++;
+    else if(e.type==='leje')l++;
+    photos+=(Array.isArray(e.photos)?e.photos.length:(e.photo?1:0));
+  });
+  let entries=Object.keys(data).length;
+  document.getElementById('totalHours').textContent=fmtH(h)+'h';
+  document.getElementById('workDays').textContent=w+' ditë pune';
+  document.getElementById('totalEntries').textContent=entries;
+  document.getElementById('photoCount').textContent=photos+' foto';
+  document.getElementById('todayHint').textContent=new Date().toLocaleDateString('sq-CH');
+  document.getElementById('statEntries').textContent=entries+'/'+daysInMonth();
+  document.getElementById('monthProgress').style.width=Math.min(100,entries/daysInMonth()*100)+'%';
+
+  let jobHtml = Object.entries(jobs).map(([name, hrs])=>`<div class="row"><span>${escapeHtml(name)}</span><b>${fmtH(hrs)}h</b></div>`).join('');
+  if(jobHtml) jobHtml = `<div style="border-top:1px solid var(--line);margin:8px 0;padding-top:8px"></div>` + jobHtml;
+
+  document.getElementById('summaryRows').innerHTML=`
+    <div class="row"><span>Punë</span><b>${w} ditë</b></div>
+    <div class="row"><span>Pushim</span><b>${p}</b></div>
+    <div class="row"><span>Sëmurë</span><b>${s}</b></div>
+    <div class="row"><span>Leje</span><b>${l}</b></div>
+    <div class="row"><span>Foto total</span><b>${photos}</b></div>
+    ${jobHtml}
+  `;
+}
 function renderTimeline(){const box=document.getElementById('timeline');box.innerHTML='';const items=Object.entries(data).map(([d,e])=>({d:Number(d),e})).sort((a,b)=>b.d-a.d);if(!items.length){box.innerHTML='<div class="empty">Ende nuk ka regjistrime për këtë muaj.<br>Prek + për të shtuar ditën e parë.</div>';return}items.forEach(({d,e})=>{const dt=new Date(Y,M,d);const photos=normalizePhotos(e.photos||e.photo||[]);const pc=photos.length;const spc=photos.filter(p=>p.selected!==false).length;const div=document.createElement('article');div.className='entry';div.onclick=()=>openDay(d);div.innerHTML=`<div class="datepill"><div><b>${d}</b><span>${DOWS[dt.getDay()]}</span></div></div><div><h3>${typeName(e.type)} ${e.type==='work'&&e.hrs?'· '+fmtH(e.hrs)+'h':''}</h3><p>${[e.job,e.loc,e.notes].filter(Boolean).join(' · ')||'Pa shënime'}</p><div class="meta">${e.job?`<span class="chip"># ${escapeHtml(e.job)}</span>`:''}${e.loc?`<span class="chip">📍 ${escapeHtml(e.loc)}</span>`:''}${e.gps?`<span class="chip">GPS ✓</span>`:''}${pc?`<span class="chip">📷 ${spc}/${pc}</span>`:''}</div></div>`;box.appendChild(div)})}
 function renderCalendar(){const g=document.getElementById('calGrid');g.innerHTML='';for(let i=0;i<offset();i++){const e=document.createElement('div');e.className='day emptyday';g.appendChild(e)}for(let d=1;d<=daysInMonth();d++){const e=data[d];const cell=document.createElement('button');cell.className='day '+(e?'has ':'')+(d===now.getDate()&&M===now.getMonth()&&Y===now.getFullYear()?'today':'');cell.onclick=()=>openDay(d);cell.innerHTML=`<b>${d}</b>${e?`<i class="dot ${e.type}"></i>${e.type==='work'?`<span class="hrs">${fmtH(e.hrs)}h</span>`:''}`:''}`;g.appendChild(cell)}}
 async function moveMonth(n){M+=n;if(M<0){M=11;Y--}if(M>11){M=0;Y++}await load();render()}
@@ -68,7 +103,24 @@ document.getElementById('hoursInput').oninput=renderQuickHours;
 document.getElementById('photoInput').onchange=async e=>{const files=[...(e.target.files||[])];if(!files.length)return;toast('Po kompresohen fotot...');for(const f of files){try{const src=await compressImage(f,1400,.78);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}catch{const src=await fileToDataURL(f);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}}renderPhotos();toast(files.length+' foto u shtuan');e.target.value=''};
 function renderPhotos(){const g=document.getElementById('photosGrid');g.innerHTML='';selectedPhotos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo '+(p.selected===false?'off':'');d.innerHTML=`<img src="${p.src}"><button type="button" class="sel">${p.selected===false?'○':'✓'}</button><button type="button" class="x">×</button>`;d.querySelector('.sel').onclick=()=>{selectedPhotos[i].selected=selectedPhotos[i].selected===false?true:false;renderPhotos()};d.querySelector('.x').onclick=()=>{selectedPhotos.splice(i,1);renderPhotos()};g.appendChild(d)});if(!selectedPhotos.length)g.innerHTML='<div class="tiny" style="grid-column:1/-1">Asnjë foto. Fotot e selektuara me ✓ futen në PDF Employer.</div>'}
 async function saveDay(){const t=currentType();data[selectedDay]={type:t,hrs:t==='work'?Math.max(0,Math.min(24,Math.round(Number(document.getElementById('hoursInput').value||0)*2)/2)):0,job:document.getElementById('jobInput').value.trim(),loc:document.getElementById('locInput').value.trim(),notes:document.getElementById('notesInput').value.trim(),gps:selectedGPS,photos:selectedPhotos};await save();closeSheet();render();toast('U ruajt')}
-async function deleteDay(){if(selectedDay&&data[selectedDay]){delete data[selectedDay];await save();closeSheet();render();toast('U fshi')}}
+async function deleteDay(){
+  if(selectedDay&&data[selectedDay]){
+    if(!confirm('A jeni i sigurt që dëshironi të fshini këtë ditë?')) return;
+    delete data[selectedDay];
+    await save();
+    closeSheet();
+    render();
+    toast('U fshi');
+  }
+}
+
+async function clearAllData(){
+  if(!confirm('A jeni i sigurt që dëshironi të fshini TË GJITHA të dhënat e këtij muaji? Kjo nuk mund të kthehet prapa.')) return;
+  data={};
+  await save();
+  render();
+  toast('Të gjitha të dhënat u fshinë');
+}
 async function exportJSON(){download('WorkLog-Backup-'+Y+'-'+String(M+1).padStart(2,'0')+'.json',JSON.stringify(await collectBackup(),null,2),'application/json')}
 document.getElementById('importInput').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{await applyBackup(JSON.parse(await f.text()));toast('Backup u importua')}catch{toast('Import i pasuksesshëm')}e.target.value=''};
 function exportCSV(){let rows=[['Data','Lloji','Ore','Puna','Lokacioni','GPS','Shenime','Foto totale','Foto ne PDF']];for(let d=1;d<=daysInMonth();d++){const e=data[d];if(!e)continue;rows.push([`${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,typeName(e.type),e.type==='work'?e.hrs:0,e.job||'',e.loc||'',e.gps?(e.gps.lat+','+e.gps.lon):'',e.notes||'',normalizePhotos(e.photos||e.photo||[]).length,normalizePhotos(e.photos||e.photo||[]).filter(p=>p.selected!==false).length])}download('WorkLog-'+Y+'-'+String(M+1).padStart(2,'0')+'.csv',rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\n'),'text/csv')}
@@ -84,7 +136,6 @@ function exportPDF(){const {jsPDF}=window.jspdf;const doc=new jsPDF();let h=0,w=
 async function exportEmployerPDF(){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF('p','mm','a4');
-  const worker=localStorage.getItem('wr-worker-name')||'WorkLog Private';
   const selectedItems=[];
   let total=0,days=0,allPhotos=0;
   Object.entries(data).forEach(([day,e])=>{
@@ -104,7 +155,7 @@ async function exportEmployerPDF(){
     try{doc.addImage(src,imgFormat(src),x,y,w,h,undefined,'FAST');return true}
     catch(e){try{doc.addImage(src,'JPEG',x,y,w,h,undefined,'FAST');return true}catch(e2){try{doc.addImage(src,'PNG',x,y,w,h,undefined,'FAST');return true}catch(e3){return false}}}
   }
-  addHeader('Employer Work Report',`${worker} · ${MONTHS[M]} ${Y}`);
+  addHeader('Employer Work Report',`${MONTHS[M]} ${Y}`);
   doc.setTextColor(25,30,40);doc.setFontSize(12);
   doc.text(`Total: ${fmtH(total)}h`,14,50);
   doc.text(`Dite pune: ${days}`,65,50);
@@ -116,7 +167,7 @@ async function exportEmployerPDF(){
   y+=5;doc.setDrawColor(220);doc.line(14,y,196,y);y+=8;
   for(let d=1;d<=daysInMonth();d++){
     const e=data[d];if(!e)continue;
-    if(y>272){doc.addPage();addHeader('Employer Work Report',`${worker} · ${MONTHS[M]} ${Y}`);y=48}
+    if(y>272){doc.addPage();addHeader('Employer Work Report',`${MONTHS[M]} ${Y}`);y=48}
     const ph=normalizePhotos(e.photos||e.photo||[]).filter(p=>p.selected!==false);
     doc.setTextColor(25,30,40);doc.setFontSize(9);
     doc.text(`${String(d).padStart(2,'0')}.${String(M+1).padStart(2,'0')}.${Y}`,14,y);
@@ -148,26 +199,19 @@ async function exportEmployerPDF(){
     if(!ok){doc.setTextColor(180,40,40);doc.text('Foto nuk mundi te futej ne PDF. Provo ta shtosh perseri si JPG/PNG.',14,y+10)}
     y+=112;
   });
-  if(y>232){doc.addPage();addHeader('Nenshkrimi',`${worker} · ${MONTHS[M]} ${Y}`);y=50}else{y+=4}
+  if(y>232){doc.addPage();addHeader('Raporti',`${MONTHS[M]} ${Y}`);y=50}else{y+=4}
   doc.setDrawColor(210);doc.line(14,y,196,y);
-  doc.setTextColor(70);doc.setFontSize(10);doc.text('Nenshkrimi',14,y+14);
-  const sig=localStorage.getItem('wr-signature');
-  if(sig){addImageSafe(sig,14,y+18,60,24)}
-  doc.text(`Gjeneruar: ${new Date().toLocaleString('sq-CH')}`,112,y+14);
+  doc.setTextColor(70);doc.setFontSize(10);
+  doc.text(`Gjeneruar më: ${new Date().toLocaleString('sq-CH')}`,14,y+14);
   doc.setFontSize(8);doc.setTextColor(120);doc.text('Kontrollo PDF-in para dergimit: fotot duhet te duken ne faqet e shtojces.',112,y+22);
   doc.save(`Employer-Report-${Y}-${String(M+1).padStart(2,'0')}-embedded.pdf`);
 }
 
 function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function renderSettings(){document.getElementById('defaultHours').value=localStorage.getItem('wr-default-hours')||'8';const wn=document.getElementById('workerName');if(wn)wn.value=localStorage.getItem('wr-worker-name')||'';loadSignatureCanvas();document.getElementById('reminderOn').checked=localStorage.getItem('rem-en')==='true';document.getElementById('reminderTime').value=localStorage.getItem('rem-t')||'17:00'}
-document.getElementById('defaultHours').onchange=e=>{localStorage.setItem('wr-default-hours',e.target.value||'8');toast('U ruajt')};document.getElementById('workerName').onchange=e=>{localStorage.setItem('wr-worker-name',e.target.value.trim());toast('U ruajt')};document.getElementById('reminderOn').onchange=e=>{localStorage.setItem('rem-en',e.target.checked);scheduleReminder();toast('Reminder u ruajt')};document.getElementById('reminderTime').onchange=e=>{localStorage.setItem('rem-t',e.target.value||'17:00');scheduleReminder();toast('Reminder u ruajt')};
+function renderSettings(){document.getElementById('defaultHours').value=localStorage.getItem('wr-default-hours')||'8';document.getElementById('reminderOn').checked=localStorage.getItem('rem-en')==='true';document.getElementById('reminderTime').value=localStorage.getItem('rem-t')||'17:00'}
+document.getElementById('defaultHours').onchange=e=>{localStorage.setItem('wr-default-hours',e.target.value||'8');toast('U ruajt')};document.getElementById('reminderOn').onchange=e=>{localStorage.setItem('rem-en',e.target.checked);scheduleReminder();toast('Reminder u ruajt')};document.getElementById('reminderTime').onchange=e=>{localStorage.setItem('rem-t',e.target.value||'17:00');scheduleReminder();toast('Reminder u ruajt')};
 function scheduleReminder(){if(!('serviceWorker'in navigator)||!('Notification'in window))return;if(Notification.permission==='default')Notification.requestPermission();navigator.serviceWorker.ready.then(reg=>{if(Notification.permission!=='granted'||localStorage.getItem('rem-en')!=='true')return;const [hh,mm]=(localStorage.getItem('rem-t')||'17:00').split(':').map(Number);const target=new Date();target.setHours(hh,mm,0,0);const delay=target-new Date();if(delay>0)reg.active?.postMessage({type:'SCHEDULE_REMINDER',delay})})}
-
-let sigReady=false;
-function loadSignatureCanvas(){const c=document.getElementById('signaturePad');if(!c||sigReady)return;sigReady=true;const resize=()=>{const old=localStorage.getItem('wr-signature');c.width=c.clientWidth*2;c.height=c.clientHeight*2;const ctx=c.getContext('2d');ctx.scale(2,2);ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#f7f8fb';if(old){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,c.clientWidth,c.clientHeight);img.src=old}};resize();let drawing=false,last=null;const pos=e=>{const r=c.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};const start=e=>{drawing=true;last=pos(e);e.preventDefault()};const move=e=>{if(!drawing)return;const p=pos(e),ctx=c.getContext('2d');ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault()};const end=()=>drawing=false;c.addEventListener('mousedown',start);c.addEventListener('mousemove',move);window.addEventListener('mouseup',end);c.addEventListener('touchstart',start,{passive:false});c.addEventListener('touchmove',move,{passive:false});c.addEventListener('touchend',end)}
-function saveSignature(){const c=document.getElementById('signaturePad');if(c){localStorage.setItem('wr-signature',c.toDataURL('image/png'));toast('Firma u ruajt')}}
-function clearSignature(){const c=document.getElementById('signaturePad');if(c){c.getContext('2d').clearRect(0,0,c.width,c.height);localStorage.removeItem('wr-signature');toast('Firma u pastrua')}}
 
 if('serviceWorker'in navigator){navigator.serviceWorker.register('sw.js').then(scheduleReminder).catch(()=>{})}
 (async()=>{await load();render();})();
