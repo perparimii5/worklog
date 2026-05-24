@@ -1,7 +1,7 @@
 {
-  "name": "WorkLog Pro",
-  "short_name": "WorkLog Pro",
-  "description": "Raport personal mujor per dite pune, ore, pushime dhe lokacione.",
+  "name": "WorkLog Private",
+  "short_name": "WorkLog",
+  "description": "Personal work hours tracker with gross/net estimate.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
