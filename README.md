@@ -11,3 +11,6 @@ Version personal i WorkLog me regjistrim të thjeshtuar:
 - PDF mujor më profesional
 
 Të dhënat ruhen lokalisht në pajisje. Bëj backup JSON rregullisht.
+
+
+Version v5: pa bruto/neto, pa overtime, me shumë foto provë për çdo ditë.

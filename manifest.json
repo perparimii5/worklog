@@ -1,25 +1,10 @@
 {
-  "name": "WorkLog Private",
-  "short_name": "WorkLog",
-  "description": "Personal work hours tracker with gross/net estimate.",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#080C06",
-  "theme_color": "#080C06",
-  "orientation": "portrait",
-  "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ]
+  "name":"WorkLog Private",
+  "short_name":"WorkLog",
+  "start_url":"./index.html",
+  "display":"standalone",
+  "background_color":"#07090f",
+  "theme_color":"#07090f",
+  "description":"Personal work timeline and monthly report app.",
+  "icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]
 }
