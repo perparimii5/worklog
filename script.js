@@ -3,20 +3,59 @@ const DOW=['E Diel','E Hënë','E Martë','E Mërkurë','E Enjte','E Premte','E 
 const DOWS=['Die','Hën','Mar','Mër','Enj','Pre','Sht'];
 let now=new Date(), Y=now.getFullYear(), M=now.getMonth(), data={}, selectedDay=null, selectedPhotos=[];
 const key=()=>`wr-${Y}-${String(M+1).padStart(2,'0')}`;
-const load=()=>{try{data=JSON.parse(localStorage.getItem(key())||'{}')}catch{data={}}};
-const save=()=>{localStorage.setItem(key(),JSON.stringify(data));localStorage.setItem('wr-backup-last',JSON.stringify(collectBackup()));localStorage.setItem('wr-backup-at',new Date().toISOString())};
+const DB_NAME='worklog-private-v9-db';
+const STORE='kv';
+let dbPromise=null;
+function openDB(){
+  if(dbPromise) return dbPromise;
+  dbPromise=new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
+    const req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore(STORE)};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+  return dbPromise;
+}
+async function idbGet(k){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,'readonly').objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function idbSet(k,v){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).put(v,k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+async function idbDel(k){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+async function idbAll(){const db=await openDB();return new Promise((res,rej)=>{const out={};const cur=db.transaction(STORE,'readonly').objectStore(STORE).openCursor();cur.onsuccess=e=>{const c=e.target.result;if(c){out[c.key]=c.value;c.continue()}else res(out)};cur.onerror=()=>rej(cur.error)})}
+function lightData(obj){return JSON.parse(JSON.stringify(obj||{},(k,v)=>k==='photos'||k==='photo'?undefined:v))}
+async function load(){
+  try{data=await idbGet(key()) || JSON.parse(localStorage.getItem(key())||'{}') || {}}
+  catch{try{data=JSON.parse(localStorage.getItem(key())||'{}')}catch{data={}}}
+}
+async function save(){
+  try{await idbSet(key(),data);await idbSet('wr-backup-last',await collectBackup());localStorage.setItem(key(),JSON.stringify(lightData(data)));localStorage.setItem('wr-storage-mode','IndexedDB');localStorage.setItem('wr-backup-at',new Date().toISOString());}
+  catch(err){
+    try{localStorage.setItem(key(),JSON.stringify(data));localStorage.setItem('wr-storage-mode','localStorage-fallback');}
+    catch{toast('Ruajtja dështoi: shumë foto. Eksporto backup dhe fshi disa foto.');throw err}
+  }
+}
 const fmtH=v=>{const n=Number(v||0);return Number.isInteger(n)?n:n.toFixed(1).replace('.',',')};
 const daysInMonth=()=>new Date(Y,M+1,0).getDate();
 const offset=()=>{const d=new Date(Y,M,1).getDay();return(d+6)%7};
-function collectBackup(){const months={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{}}}return{version:'private-v8-embedded-pdf',exportedAt:new Date().toISOString(),months,settings:{defaultHours:localStorage.getItem('wr-default-hours')||'8',workerName:localStorage.getItem('wr-worker-name')||'',signature:localStorage.getItem('wr-signature')||'',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'}}}
-function applyBackup(b){if(!b||!b.months)throw Error('Backup jo valid');Object.keys(localStorage).filter(k=>/^wr-\d{4}-\d{2}$/.test(k)).forEach(k=>localStorage.removeItem(k));Object.entries(b.months).forEach(([k,v])=>localStorage.setItem(k,JSON.stringify(v||{})));if(b.settings){localStorage.setItem('wr-default-hours',b.settings.defaultHours||'8');localStorage.setItem('wr-worker-name',b.settings.workerName||'');if(b.settings.signature)localStorage.setItem('wr-signature',b.settings.signature);localStorage.setItem('rem-en',b.settings.reminderOn||'false');localStorage.setItem('rem-t',b.settings.reminderTime||'17:00')}load();render();}
+async function collectBackup(){
+  const months={};
+  try{const all=await idbAll();Object.entries(all).forEach(([k,v])=>{if(/^wr-\d{4}-\d{2}$/.test(k))months[k]=v})}catch{}
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)&&!months[k]){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{}}}
+  return{version:'private-v9-indexeddb-safe',exportedAt:new Date().toISOString(),months,settings:{defaultHours:localStorage.getItem('wr-default-hours')||'8',workerName:localStorage.getItem('wr-worker-name')||'',signature:localStorage.getItem('wr-signature')||'',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'}}
+}
+async function applyBackup(b){
+  if(!b||!b.months)throw Error('Backup jo valid');
+  Object.keys(localStorage).filter(k=>/^wr-\d{4}-\d{2}$/.test(k)).forEach(k=>localStorage.removeItem(k));
+  for(const [k,v] of Object.entries(b.months)){await idbSet(k,v||{});try{localStorage.setItem(k,JSON.stringify(lightData(v||{})))}catch{}}
+  if(b.settings){localStorage.setItem('wr-default-hours',b.settings.defaultHours||'8');localStorage.setItem('wr-worker-name',b.settings.workerName||'');if(b.settings.signature)localStorage.setItem('wr-signature',b.settings.signature);localStorage.setItem('rem-en',b.settings.reminderOn||'false');localStorage.setItem('rem-t',b.settings.reminderTime||'17:00')}
+  await (async()=>{await load();render();})();
+}
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),2200)}
 function typeName(t){return{work:'Punë',pushim:'Pushim',semure:'Sëmurë',leje:'Leje'}[t]||'Punë'}
 function render(){document.getElementById('monthName').textContent=MONTHS[M];document.getElementById('monthYear').textContent=Y;renderStats();renderTimeline();renderCalendar();renderSettings();}
 function renderStats(){let h=0,w=0,p=0,s=0,l=0,photos=0;Object.values(data).forEach(e=>{if(e.type==='work'){w++;h+=Number(e.hrs||0)}else if(e.type==='pushim')p++;else if(e.type==='semure')s++;else if(e.type==='leje')l++;photos+=(Array.isArray(e.photos)?e.photos.length:(e.photo?1:0))});let entries=Object.keys(data).length;document.getElementById('totalHours').textContent=fmtH(h)+'h';document.getElementById('workDays').textContent=w+' ditë pune';document.getElementById('totalEntries').textContent=entries;document.getElementById('photoCount').textContent=photos+' foto';document.getElementById('todayHint').textContent=new Date().toLocaleDateString('sq-CH');document.getElementById('statEntries').textContent=entries+'/'+daysInMonth();document.getElementById('monthProgress').style.width=Math.min(100,entries/daysInMonth()*100)+'%';document.getElementById('summaryRows').innerHTML=`<div class="row"><span>Punë</span><b>${w}</b></div><div class="row"><span>Pushim</span><b>${p}</b></div><div class="row"><span>Sëmurë</span><b>${s}</b></div><div class="row"><span>Leje</span><b>${l}</b></div><div class="row"><span>Foto</span><b>${photos}</b></div>`}
 function renderTimeline(){const box=document.getElementById('timeline');box.innerHTML='';const items=Object.entries(data).map(([d,e])=>({d:Number(d),e})).sort((a,b)=>b.d-a.d);if(!items.length){box.innerHTML='<div class="empty">Ende nuk ka regjistrime për këtë muaj.<br>Prek + për të shtuar ditën e parë.</div>';return}items.forEach(({d,e})=>{const dt=new Date(Y,M,d);const photos=normalizePhotos(e.photos||e.photo||[]);const pc=photos.length;const spc=photos.filter(p=>p.selected!==false).length;const div=document.createElement('article');div.className='entry';div.onclick=()=>openDay(d);div.innerHTML=`<div class="datepill"><div><b>${d}</b><span>${DOWS[dt.getDay()]}</span></div></div><div><h3>${typeName(e.type)} ${e.type==='work'&&e.hrs?'· '+fmtH(e.hrs)+'h':''}</h3><p>${[e.job,e.loc,e.notes].filter(Boolean).join(' · ')||'Pa shënime'}</p><div class="meta">${e.job?`<span class="chip"># ${escapeHtml(e.job)}</span>`:''}${e.loc?`<span class="chip">📍 ${escapeHtml(e.loc)}</span>`:''}${e.gps?`<span class="chip">GPS ✓</span>`:''}${pc?`<span class="chip">📷 ${spc}/${pc}</span>`:''}</div></div>`;box.appendChild(div)})}
 function renderCalendar(){const g=document.getElementById('calGrid');g.innerHTML='';for(let i=0;i<offset();i++){const e=document.createElement('div');e.className='day emptyday';g.appendChild(e)}for(let d=1;d<=daysInMonth();d++){const e=data[d];const cell=document.createElement('button');cell.className='day '+(e?'has ':'')+(d===now.getDate()&&M===now.getMonth()&&Y===now.getFullYear()?'today':'');cell.onclick=()=>openDay(d);cell.innerHTML=`<b>${d}</b>${e?`<i class="dot ${e.type}"></i>${e.type==='work'?`<span class="hrs">${fmtH(e.hrs)}h</span>`:''}`:''}`;g.appendChild(cell)}}
-function moveMonth(n){M+=n;if(M<0){M=11;Y--}if(M>11){M=0;Y++}load();render()}
+async function moveMonth(n){M+=n;if(M<0){M=11;Y--}if(M>11){M=0;Y++}await load();render()}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));document.getElementById(b.dataset.view).classList.add('on')});
 function openSettings(){document.querySelector('[data-view="settings"]').click()}
 function openDay(d){selectedDay=d;const e=data[d]||{};selectedPhotos=normalizePhotos(e.photos||e.photo||[]);selectedGPS=e.gps||null;document.getElementById('sheetTitle').textContent='Dita '+d;document.getElementById('sheetSub').textContent=DOW[new Date(Y,M,d).getDay()]+' · '+MONTHS[M];document.querySelectorAll('.typebtn').forEach(b=>{b.classList.toggle('on',(e.type||'work')===b.dataset.type)});document.getElementById('hoursInput').value=e.hrs??(localStorage.getItem('wr-default-hours')||8);document.getElementById('jobInput').value=e.job||'';document.getElementById('locInput').value=e.loc||'';document.getElementById('notesInput').value=e.notes||'';renderQuickHours();renderPhotos();renderGPS();updateHoursBox();document.getElementById('sheetWrap').classList.add('on')}
@@ -28,15 +67,15 @@ function renderQuickHours(){const q=document.getElementById('quickHours');q.inne
 document.getElementById('hoursInput').oninput=renderQuickHours;
 document.getElementById('photoInput').onchange=async e=>{const files=[...(e.target.files||[])];if(!files.length)return;toast('Po kompresohen fotot...');for(const f of files){try{const src=await compressImage(f,1400,.78);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}catch{const src=await fileToDataURL(f);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}}renderPhotos();toast(files.length+' foto u shtuan');e.target.value=''};
 function renderPhotos(){const g=document.getElementById('photosGrid');g.innerHTML='';selectedPhotos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo '+(p.selected===false?'off':'');d.innerHTML=`<img src="${p.src}"><button type="button" class="sel">${p.selected===false?'○':'✓'}</button><button type="button" class="x">×</button>`;d.querySelector('.sel').onclick=()=>{selectedPhotos[i].selected=selectedPhotos[i].selected===false?true:false;renderPhotos()};d.querySelector('.x').onclick=()=>{selectedPhotos.splice(i,1);renderPhotos()};g.appendChild(d)});if(!selectedPhotos.length)g.innerHTML='<div class="tiny" style="grid-column:1/-1">Asnjë foto. Fotot e selektuara me ✓ futen në PDF Employer.</div>'}
-function saveDay(){const t=currentType();data[selectedDay]={type:t,hrs:t==='work'?Math.max(0,Math.min(24,Math.round(Number(document.getElementById('hoursInput').value||0)*2)/2)):0,job:document.getElementById('jobInput').value.trim(),loc:document.getElementById('locInput').value.trim(),notes:document.getElementById('notesInput').value.trim(),gps:selectedGPS,photos:selectedPhotos};save();closeSheet();render();toast('U ruajt')}
-function deleteDay(){if(selectedDay&&data[selectedDay]){delete data[selectedDay];save();closeSheet();render();toast('U fshi')}}
-function exportJSON(){download('WorkLog-Backup-'+Y+'-'+String(M+1).padStart(2,'0')+'.json',JSON.stringify(collectBackup(),null,2),'application/json')}
-document.getElementById('importInput').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{applyBackup(JSON.parse(await f.text()));toast('Backup u importua')}catch{toast('Import i pasuksesshëm')}e.target.value=''};
+async function saveDay(){const t=currentType();data[selectedDay]={type:t,hrs:t==='work'?Math.max(0,Math.min(24,Math.round(Number(document.getElementById('hoursInput').value||0)*2)/2)):0,job:document.getElementById('jobInput').value.trim(),loc:document.getElementById('locInput').value.trim(),notes:document.getElementById('notesInput').value.trim(),gps:selectedGPS,photos:selectedPhotos};await save();closeSheet();render();toast('U ruajt')}
+async function deleteDay(){if(selectedDay&&data[selectedDay]){delete data[selectedDay];await save();closeSheet();render();toast('U fshi')}}
+async function exportJSON(){download('WorkLog-Backup-'+Y+'-'+String(M+1).padStart(2,'0')+'.json',JSON.stringify(await collectBackup(),null,2),'application/json')}
+document.getElementById('importInput').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{await applyBackup(JSON.parse(await f.text()));toast('Backup u importua')}catch{toast('Import i pasuksesshëm')}e.target.value=''};
 function exportCSV(){let rows=[['Data','Lloji','Ore','Puna','Lokacioni','GPS','Shenime','Foto totale','Foto ne PDF']];for(let d=1;d<=daysInMonth();d++){const e=data[d];if(!e)continue;rows.push([`${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,typeName(e.type),e.type==='work'?e.hrs:0,e.job||'',e.loc||'',e.gps?(e.gps.lat+','+e.gps.lon):'',e.notes||'',normalizePhotos(e.photos||e.photo||[]).length,normalizePhotos(e.photos||e.photo||[]).filter(p=>p.selected!==false).length])}download('WorkLog-'+Y+'-'+String(M+1).padStart(2,'0')+'.csv',rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\n'),'text/csv')}
 
 function normalizePhotos(input){if(!input)return[];const arr=Array.isArray(input)?input:[input];return arr.filter(Boolean).map(x=>typeof x==='string'?{src:x,selected:true,addedAt:'',name:'foto'}:{src:x.src||x.data||'',selected:x.selected!==false,addedAt:x.addedAt||'',name:x.name||'foto'}).filter(x=>x.src)}
 function fileToDataURL(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}
-function compressImage(file,max=1400,quality=.78){return new Promise((resolve,reject)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{let w=img.width,h=img.height;if(Math.max(w,h)>max){if(w>h){h=Math.round(h*max/w);w=max}else{w=Math.round(w*max/h);h=max}}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);URL.revokeObjectURL(url);resolve(c.toDataURL('image/jpeg',quality))};img.onerror=reject;img.src=url})}
+function compressImage(file,max=1000,quality=.68){return new Promise((resolve,reject)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{let w=img.width,h=img.height;if(Math.max(w,h)>max){if(w>h){h=Math.round(h*max/w);w=max}else{w=Math.round(w*max/h);h=max}}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);URL.revokeObjectURL(url);resolve(c.toDataURL('image/jpeg',quality))};img.onerror=reject;img.src=url})}
 function renderGPS(){const el=document.getElementById('gpsStatus');if(!el)return;if(!selectedGPS){el.textContent='GPS nuk është marrë ende.';return}const acc=selectedGPS.accuracy?` ±${Math.round(selectedGPS.accuracy)}m`:'';el.innerHTML=`<b>GPS aktiv</b>${acc}<br>${escapeHtml(selectedGPS.address||'Adresë jo e gjetur')}<br>${Number(selectedGPS.lat).toFixed(6)}, ${Number(selectedGPS.lon).toFixed(6)} · ${new Date(selectedGPS.capturedAt).toLocaleString('sq-CH')}`}
 async function captureGPS(){if(!navigator.geolocation){toast('GPS nuk mbështetet në këtë pajisje');return}toast('Po merret lokacioni...');navigator.geolocation.getCurrentPosition(async pos=>{selectedGPS={lat:pos.coords.latitude,lon:pos.coords.longitude,accuracy:pos.coords.accuracy,capturedAt:new Date().toISOString(),address:''};renderGPS();try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${selectedGPS.lat}&lon=${selectedGPS.lon}`);const j=await r.json();selectedGPS.address=j.display_name||'';if(selectedGPS.address&&!document.getElementById('locInput').value.trim())document.getElementById('locInput').value=selectedGPS.address.split(',').slice(0,3).join(', ')}catch{}renderGPS();toast('GPS u ruajt për këtë ditë')},err=>toast('GPS nuk u lejua ose dështoi'),{enableHighAccuracy:true,timeout:15000,maximumAge:0})}
 
@@ -131,4 +170,4 @@ function saveSignature(){const c=document.getElementById('signaturePad');if(c){l
 function clearSignature(){const c=document.getElementById('signaturePad');if(c){c.getContext('2d').clearRect(0,0,c.width,c.height);localStorage.removeItem('wr-signature');toast('Firma u pastrua')}}
 
 if('serviceWorker'in navigator){navigator.serviceWorker.register('sw.js').then(scheduleReminder).catch(()=>{})}
-load();render();
+(async()=>{await load();render();})();

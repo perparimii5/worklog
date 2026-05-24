@@ -1,10 +1,6 @@
-# WorkLog Private v8 - Embedded PDF Photos
+WorkLog Private v9 - IndexedDB Safe Storage
 
-Ky version fut fotot e zgjedhura direkt brenda PDF-it te punedhenesit. Fotot nuk varen nga telefoni, cache ose localStorage kur PDF dergohet me WhatsApp, email ose hapet ne kompjuter.
-
-Kryesore:
-- Employer PDF me foto te futura brenda dokumentit
-- Shtojce fotosh me nga nje foto per seksion
-- GPS, timestamp dhe shenime ne metadata
-- Te gjitha fotot e selektuara futen ne PDF, jo vetem 6
-- Cache i ri per GitHub Pages
+- Ruajtje më stabile në IndexedDB për foto dhe të dhëna.
+- Fix për refresh/swipe refresh që i bënte të dhënat të dukeshin të fshira kur localStorage mbushej.
+- Fotot vazhdojnë të futen brenda PDF Employer.
+- Pas update, bëj clear cache ose reinstall PWA.
