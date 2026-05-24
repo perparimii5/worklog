@@ -526,6 +526,23 @@ body::before {
 .data-btn:active { background: var(--raised); color: var(--glow); }
 .data-btn.primary { background: var(--lime); color: var(--void); border-color: var(--lime); }
 .data-btn.danger { background: var(--red-bg); color: var(--red); border-color: rgba(255,85,51,.25); }
+
+.work-extra-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:10px; }
+.fieldbox { background: var(--surface); border:1px solid var(--border); border-radius: var(--rs); padding:10px; }
+.fieldbox label { display:block; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; font-weight:600; }
+.fieldbox input, .fieldbox select { width:100%; background:transparent; border:none; outline:none; color:var(--white); font-family:var(--font-ui); font-size:15px; }
+.quick-hours { display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; margin-top:9px; }
+.quick-hours::-webkit-scrollbar { display:none; }
+.qh { flex:0 0 auto; border:1px solid var(--border); background:var(--surface); color:var(--soft); border-radius:18px; padding:7px 11px; font-size:12px; font-weight:600; }
+.qh.on { background:var(--lime); color:var(--void); border-color:var(--lime); }
+.photo-preview { display:none; margin-top:9px; border:1px solid var(--border); border-radius:var(--rs); overflow:hidden; max-height:160px; }
+.photo-preview img { width:100%; display:block; object-fit:cover; }
+.mini-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:9px; }
+.metric-strip { padding: 10px 16px 0; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.metric { background:var(--surface); border:1px solid var(--border); border-radius:var(--rs); padding:11px; }
+.metric .ml { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px; }
+.metric .mv { font-size:18px; color:var(--glow); font-weight:700; }
+
 .secure-note { margin-top: 10px; font-size: 12px; line-height: 1.45; color: var(--dim); }
 </style>
 </head>
@@ -591,6 +608,11 @@ body::before {
   </div>
 </div>
 
+<div class="metric-strip">
+  <div class="metric"><div class="ml">Overtime / Minus</div><div class="mv" id="k-overtime">0h</div></div>
+  <div class="metric"><div class="ml">Paga bruto est.</div><div class="mv" id="k-salary">0 CHF</div></div>
+</div>
+
 <!-- CALENDAR -->
 <div class="section-hdr">
   <span>Kalendari</span>
@@ -630,10 +652,24 @@ body::before {
       <span class="hrs-label">⏱ Orët e punuara</span>
       <div class="stepper">
         <button class="stbtn" id="hd">−</button>
-        <span class="stval" id="hv">8,5</span>
+        <span class="stval" id="hv">8</span>
         <button class="stbtn" id="hi">+</button>
       </div>
     </div>
+    <div class="quick-hours" id="quick-hours"></div>
+    <div class="work-extra-grid">
+      <div class="fieldbox"><label>Fillimi</label><input type="time" id="start-f"></div>
+      <div class="fieldbox"><label>Mbarimi</label><input type="time" id="end-f"></div>
+      <div class="fieldbox"><label>Pause min</label><input type="number" id="pause-f" min="0" step="5" placeholder="30"></div>
+      <div class="fieldbox"><label>Puna / Projekti</label><input type="text" id="job-f" maxlength="32" placeholder="Company A"></div>
+    </div>
+    <div class="mini-actions">
+      <button class="data-btn" id="calc-hours-btn">Llogarit nga ora</button>
+      <button class="data-btn" id="voice-btn">🎙 Voice note</button>
+    </div>
+    <input type="file" id="photo-f" accept="image/*" style="display:none">
+    <button class="data-btn" id="photo-btn" style="margin-top:9px;width:100%">📷 Shto foto provë</button>
+    <div class="photo-preview" id="photo-prev"><img id="photo-img" alt="Foto provë"></div>
   </div>
 
   <div id="loc-sec">
@@ -699,6 +735,15 @@ body::before {
   </div>
 
   <div class="sg">
+    <div class="sg-lbl">Kontrata & paga</div>
+    <div class="work-extra-grid">
+      <div class="fieldbox"><label>Orë/javë</label><input type="number" id="contract-f" min="1" step="0.5" value="42.5"></div>
+      <div class="fieldbox"><label>CHF/orë</label><input type="number" id="rate-f" min="0" step="0.05" value="32"></div>
+    </div>
+    <div class="secure-note">Përdoret vetëm për llogaritje personale: overtime dhe pagë bruto të përafërt.</div>
+  </div>
+
+  <div class="sg">
     <div class="sg-lbl">Backup & ruajtje</div>
     <div class="srow">
       <div>
@@ -725,7 +770,7 @@ const ICONS=["🏢","🏠","☕","🏭","🏨","🏫","🏥","💻","🌍","🏗
 const T=new Date();
 let Y=T.getFullYear(), M=T.getMonth();
 let data={}, locs=[], swR=null, filterLoc='';
-let selDay=null, selType='work', selHrs=8.5, selLoc='', selLocAddr='';
+let selDay=null, selType='work', selHrs=8, selLoc='', selLocAddr='', selPhoto='';
 let mMap=null, mMark=null, manMap=null, manMark=null;
 
 // Storage
@@ -737,14 +782,16 @@ const saveL=(snap=true)=>{localStorage.setItem('wr-locs',JSON.stringify(locs));i
 const getR=()=>({en:localStorage.getItem('rem-en')==='true',t:localStorage.getItem('rem-t')||'17:00'});
 const setR=(e,t)=>{localStorage.setItem('rem-en',e);localStorage.setItem('rem-t',t)};
 const fmtH=v=>{const n=Number(v||0);return Number.isInteger(n)?String(n):String(n).replace('.',',');};
-const clampH=v=>Math.min(24,Math.max(0.5,Math.round(Number(v||8.5)*2)/2));
+const clampH=v=>Math.min(24,Math.max(0,Math.round(Number(v||8)*2)/2));
+const getSet=()=>({contract:Number(localStorage.getItem('wr-contract')||42.5),rate:Number(localStorage.getItem('wr-rate')||32)});
+const setSet=(c,r)=>{localStorage.setItem('wr-contract',c);localStorage.setItem('wr-rate',r);};
 function collectBackup(){
   const months={};
   for(let i=0;i<localStorage.length;i++){
     const k=localStorage.key(i);
     if(/^wr-\d{4}-\d{2}$/.test(k)){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{months[k]={}}}
   }
-  return {app:'WorkLog',version:'2.0',exportedAt:new Date().toISOString(),months,locations:locs,reminders:getR()};
+  return {app:'WorkLog',version:'3.0',exportedAt:new Date().toISOString(),months,locations:locs,reminders:getR()};
 }
 function writeSnapshot(){try{localStorage.setItem('wr-backup-last',JSON.stringify(collectBackup()));localStorage.setItem('wr-backup-at',new Date().toISOString());}catch{}}
 function applyBackup(b){
@@ -815,7 +862,8 @@ function renderGrid(){
       const ab={work:'P',pushim:'PU',semure:'S',leje:'L'}[dd.type];
       const t=document.createElement('div');t.className='dtag '+cls;t.textContent=ab;cell.appendChild(t);
       if(dd.type==='work'&&dd.hrs){const h=document.createElement('div');h.className='dh';h.textContent=fmtH(dd.hrs)+'h';cell.appendChild(h);}
-      if(dd.loc){const l=locs.find(x=>x.name===dd.loc);const le=document.createElement('div');le.className='dloc';le.textContent=(l?l.icon+' ':'')+dd.loc;cell.appendChild(le);}
+      if(dd.loc||dd.job){const l=locs.find(x=>x.name===dd.loc);const le=document.createElement('div');le.className='dloc';le.textContent=(dd.job?dd.job+' · ':'')+(dd.loc?(l?l.icon+' ':'')+dd.loc:'');cell.appendChild(le);}
+      if(dd.photo){const ph=document.createElement('div');ph.className='dloc';ph.textContent='📷 provë';cell.appendChild(ph);}
     }
     cell.onclick=()=>openDay(d);
     g.appendChild(cell);
@@ -826,11 +874,17 @@ function renderKPI(){
   let w=0,p=0,s=0,l=0,h=0;
   const rows=filterLoc?Object.values(data).filter(v=>v.loc===filterLoc):Object.values(data);
   rows.forEach(v=>{if(v.type==='work'){w++;h+=v.hrs||0;}else if(v.type==='pushim')p++;else if(v.type==='semure')s++;else l++;});
+  const set=getSet();
+  const expected=(set.contract/5)*w;
+  const overtime=Math.round((h-expected)*10)/10;
+  const salary=Math.round(h*set.rate);
   document.getElementById('k-work').textContent=w;
   document.getElementById('k-hrs').textContent=fmtH(h)+' orë totale';
   document.getElementById('k-pushim').textContent=p;
   document.getElementById('k-semure').textContent=s;
   document.getElementById('k-leje').textContent=l;
+  document.getElementById('k-overtime').textContent=(overtime>0?'+':'')+fmtH(overtime)+'h';
+  document.getElementById('k-salary').textContent=salary.toLocaleString('de-CH')+' CHF';
 }
 
 function renderBanner(){document.getElementById('banner').classList.toggle('show',!logged());}
@@ -838,12 +892,15 @@ function renderBanner(){document.getElementById('banner').classList.toggle('show
 // Day sheet
 function openDay(d){
   selDay=d; const dd=data[d];
-  selType=dd?dd.type:'work'; selHrs=clampH(dd?.hrs||8.5); selLoc=dd?.loc||''; selLocAddr=dd?.locAddr||'';
+  selType=dd?dd.type:'work'; selHrs=clampH(dd?.hrs ?? 8); selLoc=dd?.loc||''; selLocAddr=dd?.locAddr||''; selPhoto=dd?.photo||'';
   const dt=new Date(Y,M,d);
   document.getElementById('sh-title').textContent=d+' '+MONTHS[M]+' '+Y;
   document.getElementById('sh-sub').textContent=DNAMES[dt.getDay()];
   document.getElementById('hv').textContent=fmtH(selHrs);
   document.getElementById('notes-f').value=dd?.notes||'';
+  document.getElementById('start-f').value=dd?.start||''; document.getElementById('end-f').value=dd?.end||''; document.getElementById('pause-f').value=dd?.pause||''; document.getElementById('job-f').value=dd?.job||'';
+  const pp=document.getElementById('photo-prev'); const pi=document.getElementById('photo-img'); if(selPhoto){pi.src=selPhoto; pp.style.display='block';}else{pi.removeAttribute('src'); pp.style.display='none';}
+  renderQuickHours();
   document.getElementById('del-btn').style.display=dd?'flex':'none';
   document.getElementById('mini-map').style.display='none';
   document.getElementById('gps-spin').style.display='none';
@@ -894,12 +951,32 @@ function updateTypeUI(){
   sb.style.boxShadow=selType==='work'?'0 4px 20px rgba(143,208,64,.3)':'none';
 }
 
+function renderQuickHours(){
+  const q=document.getElementById('quick-hours'); if(!q)return; q.innerHTML='';
+  [4,6,7,7.5,8,8.5,9,9.5,10,10.5,11,12].forEach(v=>{
+    const b=document.createElement('button'); b.className='qh'+(Number(selHrs)===v?' on':''); b.textContent=fmtH(v)+'h';
+    b.onclick=()=>{selHrs=v;document.getElementById('hv').textContent=fmtH(selHrs);renderQuickHours();}; q.appendChild(b);
+  });
+}
+function timeToMin(t){if(!t)return null;const [h,m]=t.split(':').map(Number);return h*60+m;}
+function calcFromTimes(){
+  const st=timeToMin(document.getElementById('start-f').value), en=timeToMin(document.getElementById('end-f').value);
+  const pause=Number(document.getElementById('pause-f').value||0);
+  if(st==null||en==null){toast('Vendos fillimin dhe mbarimin');return;}
+  let diff=en-st; if(diff<0)diff+=24*60;
+  selHrs=clampH((diff-pause)/60); document.getElementById('hv').textContent=fmtH(selHrs); renderQuickHours();
+}
+
 document.querySelectorAll('.tbtn').forEach(b=>b.addEventListener('click',()=>{selType=b.dataset.t;updateTypeUI();}));
-document.getElementById('hd').onclick=()=>{if(selHrs>1){selHrs--;document.getElementById('hv').textContent=fmtH(selHrs);}};
-document.getElementById('hi').onclick=()=>{if(selHrs<24){selHrs++;document.getElementById('hv').textContent=fmtH(selHrs);}};
+document.getElementById('hd').onclick=()=>{if(selHrs>0){selHrs=clampH(selHrs-0.5);document.getElementById('hv').textContent=fmtH(selHrs);renderQuickHours();}};
+document.getElementById('hi').onclick=()=>{if(selHrs<24){selHrs=clampH(selHrs+0.5);document.getElementById('hv').textContent=fmtH(selHrs);renderQuickHours();}};
+document.getElementById('calc-hours-btn').onclick=calcFromTimes;
+document.getElementById('photo-btn').onclick=()=>document.getElementById('photo-f').click();
+document.getElementById('photo-f').onchange=e=>{const f=e.target.files?.[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{selPhoto=r.result;document.getElementById('photo-img').src=selPhoto;document.getElementById('photo-prev').style.display='block';}; r.readAsDataURL(f);};
+document.getElementById('voice-btn').onclick=()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){toast('Voice input nuk mbështetet në këtë browser');return;}const rec=new SR();rec.lang='sq-AL';rec.onresult=e=>{const txt=e.results[0][0].transcript;document.getElementById('notes-f').value=(document.getElementById('notes-f').value+' '+txt).trim();toast('🎙 U shtua në shënime');};rec.start();};
 
 document.getElementById('save-btn').onclick=()=>{
-  data[selDay]={type:selType,hrs:selType==='work'?clampH(selHrs):0,loc:selLoc,locAddr:selLocAddr,notes:document.getElementById('notes-f').value.trim()};
+  data[selDay]={type:selType,hrs:selType==='work'?clampH(selHrs):0,start:document.getElementById('start-f').value,end:document.getElementById('end-f').value,pause:document.getElementById('pause-f').value,job:document.getElementById('job-f').value.trim(),photo:selPhoto,loc:selLoc,locAddr:selLocAddr,notes:document.getElementById('notes-f').value.trim()};
   save();closeSheet();renderKPI();renderBanner();schedRem();toast('✦ E ruajtur me sukses');
 };
 document.getElementById('del-btn').onclick=()=>{delete data[selDay];save();closeSheet();renderKPI();renderBanner();};
@@ -1014,12 +1091,13 @@ function exportPDF(){
   // Stats bar
   doc.setFillColor(20,30,16); doc.roundedRect(mL,y,cW,12,3,3,'F');
   doc.setTextColor(120,160,90); doc.setFontSize(7.5); doc.setFont('helvetica','normal');
-  const stats=['Ditë pune: '+wkDays,'Mesatare: '+fmtH(wD?Math.round((hrs/wD)*10)/10:0)+'h/ditë','Mungesë: '+(pD+sD+lD)+' ditë','Prezenca: '+Math.round(wD/Math.max(wkDays-pD-lD,1)*100)+'%'];
+  const set=getSet(); const expected=(set.contract/5)*wD; const overtime=Math.round((hrs-expected)*10)/10; const salary=Math.round(hrs*set.rate);
+  const stats=['Ditë pune: '+wkDays,'Mesatare: '+fmtH(wD?Math.round((hrs/wD)*10)/10:0)+'h/ditë','Overtime: '+(overtime>0?'+':'')+fmtH(overtime)+'h','Bruto est.: '+salary.toLocaleString('de-CH')+' CHF'];
   stats.forEach((s,i)=>doc.text(s,mL+4+i*(cW/4),y+8));
   y+=20;
 
   // Table
-  const cols=[['Data',32],['Lloji',22],['Orë',16],['Lokacioni',52],['Shënime',46]];
+  const cols=[['Data',28],['Lloji',20],['Orë',14],['Orari',24],['Puna/Lok.',42],['Shënime',40]];
   doc.setFillColor(8,12,6); doc.rect(mL,y,cW,9,'F');
   doc.setFillColor(143,208,64); doc.rect(mL,y,cW,1.5,'F');
   let cx=mL+3; doc.setTextColor(143,208,64); doc.setFontSize(7); doc.setFont('helvetica','bold');
@@ -1032,7 +1110,7 @@ function exportPDF(){
     doc.rect(mL,y-5,cW,8,'F');
     const tMap={work:['Prezent',[143,208,64]],pushim:['Pushim',[255,85,51]],semure:['Sëmurë',[240,160,48]],leje:['Leje',[68,136,221]]};
     const[tl,tc]=tMap[e.type];
-    const row=[DNAMES[dt.getDay()].replace('E ','')+' '+d+'.'+String(M+1).padStart(2,'0'),tl,e.type==='work'?fmtH(e.hrs||0)+'h':'—',(e.loc||'—').substring(0,28),(e.notes||'—').substring(0,22)];
+    const row=[DNAMES[dt.getDay()].replace('E ','')+' '+d+'.'+String(M+1).padStart(2,'0'),tl,e.type==='work'?fmtH(e.hrs||0)+'h':'—',e.start&&e.end?(e.start+'-'+e.end):'—',((e.job?e.job+' / ':'')+(e.loc||'—')).substring(0,24),((e.photo?'📷 ':'')+(e.notes||'—')).substring(0,20)];
     cx=mL+3;
     cols.forEach(([,w],ci)=>{
       if(ci===1){doc.setTextColor(...tc);doc.setFont('helvetica','bold');}
@@ -1103,7 +1181,8 @@ document.getElementById('clear-month-btn').onclick=()=>{
 
 // Settings
 function updSettings(){
-  const s=getR();
+  const s=getR(); const ws=getSet();
+  document.getElementById('contract-f').value=ws.contract; document.getElementById('rate-f').value=ws.rate;
   document.getElementById('rem-tog').checked=s.en;
   document.getElementById('rem-time').value=s.t;
   document.getElementById('time-row').style.opacity=s.en?'1':'0.35';
@@ -1118,6 +1197,8 @@ function updSettings(){
   const at=localStorage.getItem('wr-backup-at');
   document.getElementById('backup-badge').textContent=at?'Auto ✓':'Auto';
 }
+document.getElementById('contract-f').onchange=function(){const ws=getSet();setSet(Number(this.value||42.5),ws.rate);renderKPI();};
+document.getElementById('rate-f').onchange=function(){const ws=getSet();setSet(ws.contract,Number(this.value||0));renderKPI();};
 document.getElementById('rem-tog').onchange=function(){const s=getR();setR(this.checked,s.t);updSettings();schedRem();};
 document.getElementById('rem-time').onchange=function(){const s=getR();setR(s.en,this.value);schedRem();};
 document.getElementById('perm-btn').onclick=async()=>{const r=await Notification.requestPermission();if(r==='granted'){setR(true,document.getElementById('rem-time').value||'17:00');document.getElementById('rem-tog').checked=true;}updSettings();schedRem();};
