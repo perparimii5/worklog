@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WorkLog">
+<meta name="theme-color" content="#080C06">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<title>WorkLog</title>
+<style>
+:root {
+  --void:    #080C06;
+  --deep:    #111A0D;
+  --surface: #182212;
+  --raised:  #1F2D18;
+  --muted:   #2C3D24;
+  --border:  #334428;
+  --dim:     #5A7048;
+  --mid:     #7A9260;
+  --soft:    #A8C488;
+  --glow:    #C8E8A0;
+  --lime:    #8FD040;
+  --white:   #F2F5EE;
+  --paper:   #F8F6F0;
+  --paper2:  #EDE9E0;
+  --paper3:  #E0DAD0;
+  --ink:     #1A2214;
+
+  --red:     #FF5533;  --red-dim: #3D1A12;   --red-bg: #1E0D08;
+  --amber:   #F0A030;  --amber-dim: #3D2C0A; --amber-bg: #1E1608;
+  --blue:    #4488DD;  --blue-dim: #0D2040;  --blue-bg: #080F1E;
+
+  --r: 14px; --rs: 10px; --rxs: 7px;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-ui: 'Outfit', system-ui, sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --glow-shadow: 0 0 40px rgba(143,208,64,.12), 0 0 80px rgba(143,208,64,.05);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { background: var(--void); }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--void);
+  color: var(--white);
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ── NOISE TEXTURE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: .025; pointer-events: none; z-index: 999;
+}
+
+/* ── HEADER ── */
+.header {
+  position: sticky; top: 0; z-index: 50;
+  background: linear-gradient(180deg, rgba(8,12,6,.98) 0%, rgba(8,12,6,.92) 100%);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: calc(16px + var(--safe-top)) 20px 16px;
+}
+.header-top { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand-mark {
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, var(--lime) 0%, var(--soft) 100%);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  box-shadow: 0 0 16px rgba(143,208,64,.35);
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 20px; color: var(--white); letter-spacing: -.2px; line-height: 1;
+}
+.brand-sub {
+  font-size: 10px; color: var(--dim); margin-top: 2px;
+  letter-spacing: 1.5px; text-transform: uppercase; font-weight: 400;
+}
+.hdr-actions { display: flex; gap: 6px; }
+.hdr-btn {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 9px; width: 34px; height: 34px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; color: var(--mid); transition: all .18s;
+}
+.hdr-btn:active { background: var(--muted); color: var(--glow); }
+
+/* Month nav */
+.month-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; padding: 0 2px;
+}
+.mnav-btn {
+  background: none; border: 1px solid var(--border);
+  border-radius: 8px; width: 32px; height: 32px;
+  font-size: 16px; cursor: pointer; color: var(--mid);
+  display: flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.mnav-btn:active { background: var(--raised); color: var(--glow); }
+.month-center { text-align: center; }
+.month-name {
+  font-family: var(--font-display);
+  font-size: 19px; color: var(--white); letter-spacing: -.2px;
+}
+.month-year { font-size: 11px; color: var(--dim); letter-spacing: 1.5px; margin-top: 1px; }
+
+/* ── BANNER ── */
+.banner {
+  margin: 12px 16px 0;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--raised) 100%);
+  border: 1px solid var(--lime);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+  display: none; align-items: center; gap: 10px;
+  box-shadow: 0 0 20px rgba(143,208,64,.1);
+  animation: fadeSlide .3s ease;
+}
+@keyframes fadeSlide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+.banner.show { display: flex; }
+.banner-pulse { width: 7px; height: 7px; background: var(--lime); border-radius: 50%; flex-shrink: 0; animation: blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1;box-shadow:0 0 6px var(--lime)} 50%{opacity:.3;box-shadow:none} }
+.banner-text { font-size: 13px; color: var(--soft); flex: 1; }
+.banner-go {
+  background: var(--lime); border: none; border-radius: 6px;
+  padding: 5px 12px; font-size: 12px; font-weight: 600; color: var(--void);
+  cursor: pointer; font-family: var(--font-ui);
+}
+
+/* ── LOC STRIP ── */
+.loc-strip {
+  padding: 12px 16px 0;
+  display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none;
+}
+.loc-strip::-webkit-scrollbar { display: none; }
+.lchip {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 12px;
+  font-size: 12px; color: var(--mid); white-space: nowrap;
+  cursor: pointer; flex-shrink: 0; transition: all .15s;
+}
+.lchip.on { background: var(--raised); border-color: var(--lime); color: var(--lime); }
+.lchip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+.lchip.on .lchip-dot { background: var(--lime); box-shadow: 0 0 6px var(--lime); }
+
+/* ── KPI CARDS ── */
+.kpi-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; padding: 14px 16px 0;
+}
+.kpi {
+  border-radius: var(--r); padding: 16px;
+  border: 1px solid var(--border);
+  position: relative; overflow: hidden;
+  transition: transform .15s;
+}
+.kpi:active { transform: scale(.98); }
+.kpi::before {
+  content: ''; position: absolute;
+  top: -30px; right: -30px; width: 90px; height: 90px;
+  border-radius: 50%; opacity: .06;
+  background: currentColor;
+}
+.kpi-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 1.2px;
+  text-transform: uppercase; opacity: .55; margin-bottom: 8px;
+}
+.kpi-val {
+  font-family: var(--font-display);
+  font-size: 34px; font-weight: 700; line-height: .9; letter-spacing: -1px;
+}
+.kpi-sub { font-size: 11px; margin-top: 6px; opacity: .5; }
+
+.kpi-work {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--raised) 100%);
+  color: var(--glow);
+  border-color: var(--border);
+  box-shadow: var(--glow-shadow);
+}
+.kpi-work .kpi-val { color: var(--lime); }
+.kpi-pushim { background: var(--red-bg); color: var(--red); border-color: #330F08; }
+.kpi-semure { background: var(--amber-bg); color: var(--amber); border-color: #33200A; }
+.kpi-leje   { background: var(--blue-bg); color: var(--blue); border-color: #0A1830; }
+
+/* ── DIVIDER ── */
+.section-hdr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 16px 10px;
+}
+.section-hdr span {
+  font-size: 10px; font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--dim);
+}
+.section-line { flex: 1; height: 1px; background: var(--border); }
+
+/* ── CALENDAR ── */
+.cal-wrap { padding: 0 16px; }
+.cal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden;
+}
+.cal-head {
+  display: grid; grid-template-columns: repeat(7,1fr);
+  background: var(--raised); border-bottom: 1px solid var(--border);
+}
+.cal-head div {
+  font-size: 9px; font-weight: 600; text-align: center;
+  padding: 9px 2px; color: var(--dim); letter-spacing: .8px;
+}
+.cal-head div.wk { color: var(--border); }
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); }
+
+.day {
+  min-height: 58px;
+  border-right: 1px solid rgba(51,68,40,.5);
+  border-bottom: 1px solid rgba(51,68,40,.5);
+  padding: 6px 5px; cursor: pointer;
+  transition: background .1s; -webkit-user-select: none;
+  position: relative;
+}
+.day:nth-child(7n) { border-right: none; }
+.day:active:not(.empty):not(.wknd) { background: var(--raised); }
+.day.empty  { cursor: default; background: rgba(8,12,6,.4); }
+.day.wknd   { cursor: default; background: rgba(8,12,6,.3); opacity: .4; }
+
+.day .dn {
+  font-size: 11px; font-weight: 500; color: var(--dim);
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+}
+.day.today .dn {
+  background: var(--lime); color: var(--void);
+  border-radius: 50%; font-weight: 700; font-size: 10px;
+  box-shadow: 0 0 10px rgba(143,208,64,.5);
+}
+.day.sel { background: var(--raised) !important; outline: 1.5px solid var(--lime); outline-offset: -1.5px; }
+
+.day .dtag {
+  display: inline-block; font-size: 8px; font-weight: 700;
+  border-radius: 3px; padding: 2px 4px; margin-top: 3px;
+  letter-spacing: .3px; text-transform: uppercase;
+}
+.day .dh   { font-size: 8px; color: var(--dim); margin-top: 1px; }
+.day .dloc { font-size: 7px; color: var(--dim); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+.tw { background: rgba(143,208,64,.15); color: var(--lime); }
+.tp { background: rgba(255,85,51,.15);  color: var(--red); }
+.ts { background: rgba(240,160,48,.15); color: var(--amber); }
+.tl { background: rgba(68,136,221,.15); color: var(--blue); }
+
+.bottom-pad { height: calc(40px + var(--safe-bottom)); }
+
+/* ── OVERLAY & SHEETS ── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(4,8,3,.75);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  z-index: 100; opacity: 0; pointer-events: none; transition: opacity .25s;
+}
+.overlay.on { opacity: 1; pointer-events: all; }
+
+.sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
+  background: var(--deep);
+  border: 1px solid var(--border); border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  padding: 0 20px calc(20px + var(--safe-bottom));
+  z-index: 101; transform: translateY(100%);
+  transition: transform .32s cubic-bezier(.32,.72,0,1);
+  max-height: 92dvh; overflow-y: auto;
+}
+.sheet.on { transform: translateY(0); }
+.pill {
+  width: 38px; height: 4px; background: var(--border);
+  border-radius: 2px; margin: 12px auto 20px;
+}
+.sh-title {
+  font-family: var(--font-display);
+  font-size: 22px; color: var(--white); text-align: center; margin-bottom: 4px;
+}
+.sh-sub {
+  font-size: 10px; color: var(--dim); text-align: center;
+  letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 20px;
+}
+.fl { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; }
+
+/* ── TYPE BUTTONS ── */
+.tgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.tbtn {
+  border: 1px solid var(--border); border-radius: var(--rs);
+  padding: 13px 12px; cursor: pointer;
+  background: var(--surface);
+  display: flex; align-items: center; gap: 8px;
+  transition: all .15s; font-family: var(--font-ui);
+}
+.tbtn:active { transform: scale(.97); }
+.tbtn .ti { font-size: 16px; }
+.tbtn .tl2 { font-size: 13px; font-weight: 500; flex: 1; color: var(--soft); }
+.tbtn .tc  { font-size: 11px; opacity: 0; color: var(--lime); }
+.tbtn.aw { background: var(--raised); border-color: var(--lime); box-shadow: 0 0 16px rgba(143,208,64,.12); }
+.tbtn.aw .tl2, .tbtn.aw .tc { color: var(--lime); }
+.tbtn.aw .tc { opacity: 1; }
+.tbtn.ap { background: var(--red-bg); border-color: #551A10; }
+.tbtn.ap .tl2, .tbtn.ap .tc { color: var(--red); opacity: 1; }
+.tbtn.as { background: var(--amber-bg); border-color: #553010; }
+.tbtn.as .tl2, .tbtn.as .tc { color: var(--amber); opacity: 1; }
+.tbtn.al { background: var(--blue-bg); border-color: #0D2040; }
+.tbtn.al .tl2, .tbtn.al .tc { color: var(--blue); opacity: 1; }
+
+/* ── HOURS ── */
+.hrs-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rs); padding: 12px 16px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+.hrs-label { font-size: 13px; color: var(--mid); flex: 1; }
+.stepper { display: flex; align-items: center; gap: 12px; }
+.stbtn {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; width: 32px; height: 32px; font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--soft); transition: all .12s;
+}
+.stbtn:active { background: var(--muted); color: var(--lime); }
+.stval {
+  font-family: var(--font-display);
+  font-size: 20px; font-weight: 700; min-width: 40px;
+  text-align: center; color: var(--white);
+}
+
+/* ── LOCATION OPTIONS ── */
+.loc-opts { display: flex; flex-direction: column; gap: 7px; margin-bottom: 8px; }
+.lopt {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rs); padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; transition: all .15s; font-family: var(--font-ui);
+}
+.lopt:active { transform: scale(.98); }
+.lopt .lico { font-size: 18px; flex-shrink: 0; }
+.lopt .linfo { flex: 1; overflow: hidden; }
+.lopt .lname { font-size: 13px; font-weight: 500; color: var(--soft); }
+.lopt .laddr { font-size: 11px; color: var(--dim); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lopt.lon { background: rgba(143,208,64,.06); border-color: rgba(143,208,64,.4); }
+.lopt.lon .lname { color: var(--lime); }
+.lopt.lon .laddr { color: var(--soft); }
+
+.gps-row {
+  background: rgba(68,136,221,.07); border: 1px solid rgba(68,136,221,.25);
+  border-radius: var(--rs); padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; margin-top: 8px;
+}
+.gps-row .gi { font-size: 18px; }
+.gps-row .gtxt { flex: 1; }
+.gps-row .gt { font-size: 13px; font-weight: 600; color: var(--blue); display: block; }
+.gps-row .gs { font-size: 11px; color: rgba(68,136,221,.6); display: block; margin-top: 1px; }
+.gps-spin { animation: spin 1s linear infinite; display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#mini-map { height: 150px; border-radius: var(--rs); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); display: none; }
+
+/* ── NOTES ── */
+.notes-field {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rs); padding: 12px 14px;
+  font-size: 13px; font-family: var(--font-ui); color: var(--soft);
+  resize: none; outline: none; min-height: 60px; margin-bottom: 16px;
+  transition: border .15s;
+}
+.notes-field:focus { border-color: var(--dim); }
+.notes-field::placeholder { color: var(--dim); }
+
+/* ── BUTTONS ── */
+.save-btn {
+  width: 100%; background: var(--lime); color: var(--void);
+  border: none; border-radius: var(--rs);
+  padding: 15px; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: var(--font-ui);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 4px 20px rgba(143,208,64,.3);
+  transition: all .15s;
+}
+.save-btn:active { transform: scale(.98); box-shadow: none; }
+.del-btn {
+  width: 100%; background: none;
+  border: 1px solid rgba(255,85,51,.3);
+  border-radius: var(--rs); padding: 12px;
+  font-size: 13px; color: var(--red); cursor: pointer;
+  margin-top: 10px; font-family: var(--font-ui); transition: all .15s;
+}
+.del-btn:active { background: var(--red-bg); }
+
+/* ── SETTINGS ── */
+.sg { margin-bottom: 22px; }
+.sg-lbl {
+  font-size: 9px; font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--dim);
+  margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.srow {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-bottom: 1px solid rgba(51,68,40,.4);
+}
+.srow:last-child { border-bottom: none; }
+.slbl { font-size: 14px; font-weight: 400; color: var(--soft); }
+.ssub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.toggle { position: relative; width: 48px; height: 28px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.tsldr {
+  position: absolute; inset: 0; background: var(--muted);
+  border-radius: 28px; transition: .3s; cursor: pointer;
+  border: 1px solid var(--border);
+}
+.tsldr:before {
+  position: absolute; content: ''; width: 22px; height: 22px;
+  left: 2px; bottom: 2px; background: var(--mid); border-radius: 50%;
+  transition: .3s;
+}
+.toggle input:checked + .tsldr { background: rgba(143,208,64,.2); border-color: var(--lime); }
+.toggle input:checked + .tsldr:before { transform: translateX(20px); background: var(--lime); }
+.tinp {
+  border: 1px solid var(--border); border-radius: var(--rxs);
+  padding: 7px 12px; font-size: 15px; color: var(--white);
+  background: var(--surface); font-family: var(--font-ui); width: 100px; text-align: center;
+}
+.nbadge { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; }
+.nb-ok { background: rgba(143,208,64,.15); color: var(--lime); }
+.nb-no { background: rgba(255,85,51,.15); color: var(--red); }
+.perm-btn {
+  width: 100%; background: var(--lime); color: var(--void);
+  border: none; border-radius: var(--rs); padding: 13px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: var(--font-ui); margin-top: 12px;
+}
+.test-btn {
+  width: 100%; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--rs); padding: 12px;
+  font-size: 13px; font-weight: 500; color: var(--mid);
+  cursor: pointer; font-family: var(--font-ui); margin-top: 8px;
+}
+.ios-note {
+  background: rgba(68,136,221,.08); border: 1px solid rgba(68,136,221,.25);
+  border-radius: var(--rs); padding: 12px;
+  font-size: 12px; color: var(--blue); line-height: 1.6; margin-top: 12px;
+}
+
+/* ── MANAGE LOCATIONS ── */
+.mloc-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.mloc-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rs); padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.mloc-ico { font-size: 16px; }
+.mloc-info { flex: 1; overflow: hidden; }
+.mloc-name { font-size: 14px; font-weight: 500; color: var(--soft); }
+.mloc-addr { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mloc-del {
+  background: none; border: none; font-size: 18px;
+  cursor: pointer; color: var(--dim); padding: 2px 4px; transition: color .12s;
+}
+.mloc-del:active { color: var(--red); }
+
+.add-loc-row {
+  background: var(--surface); border: 1px dashed var(--border);
+  border-radius: var(--rs); padding: 12px 14px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+.add-loc-row input {
+  border: none; background: none; font-size: 14px;
+  font-family: var(--font-ui); color: var(--white); flex: 1; outline: none;
+}
+.add-loc-row input::placeholder { color: var(--dim); }
+.add-loc-row button {
+  background: var(--lime); border: none; border-radius: 7px;
+  padding: 7px 14px; font-size: 12px; font-weight: 700;
+  color: var(--void); cursor: pointer; font-family: var(--font-ui);
+}
+.gps-add {
+  width: 100%; background: rgba(68,136,221,.08);
+  border: 1px solid rgba(68,136,221,.25); border-radius: var(--rs);
+  padding: 11px; font-size: 13px; font-weight: 600; color: var(--blue);
+  cursor: pointer; font-family: var(--font-ui);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#manage-map { height: 180px; border-radius: var(--rs); margin: 10px 0; border: 1px solid var(--border); display: none; overflow: hidden; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: calc(70px + var(--safe-bottom));
+  left: 50%; transform: translateX(-50%) translateY(10px);
+  background: var(--raised); border: 1px solid var(--border);
+  color: var(--glow); padding: 9px 20px; border-radius: 30px;
+  font-size: 13px; opacity: 0; transition: all .28s;
+  z-index: 300; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-top">
+    <div class="brand">
+      <div class="brand-mark">📋</div>
+      <div>
+        <div class="brand-name">WorkLog</div>
+        <div class="brand-sub">Raport personal</div>
+      </div>
+    </div>
+    <div class="hdr-actions">
+      <button class="hdr-btn" id="pdf-btn" title="Eksporto PDF">📄</button>
+      <button class="hdr-btn" id="loc-btn" title="Lokacionet">📍</button>
+      <button class="hdr-btn" id="set-btn" title="Cilësimet">⚙️</button>
+    </div>
+  </div>
+  <div class="month-nav">
+    <button class="mnav-btn" id="prev">‹</button>
+    <div class="month-center">
+      <div class="month-name" id="mname"></div>
+      <div class="month-year" id="myear"></div>
+    </div>
+    <button class="mnav-btn" id="next">›</button>
+  </div>
+</div>
+
+<!-- BANNER -->
+<div class="banner" id="banner">
+  <div class="banner-pulse"></div>
+  <span class="banner-text">Nuk e ke shënuar ditën e sotme</span>
+  <button class="banner-go" id="banner-btn">Shëno →</button>
+</div>
+
+<!-- LOC FILTER -->
+<div class="loc-strip" id="loc-strip" style="display:none"></div>
+
+<!-- KPI CARDS -->
+<div class="kpi-grid">
+  <div class="kpi kpi-work">
+    <div class="kpi-label">✦ Ditë pune</div>
+    <div class="kpi-val" id="k-work">0</div>
+    <div class="kpi-sub" id="k-hrs">0 orë totale</div>
+  </div>
+  <div class="kpi kpi-pushim">
+    <div class="kpi-label">☀ Pushim</div>
+    <div class="kpi-val" id="k-pushim">0</div>
+    <div class="kpi-sub">ditë pushimi</div>
+  </div>
+  <div class="kpi kpi-semure">
+    <div class="kpi-label">🩺 Sëmurë</div>
+    <div class="kpi-val" id="k-semure">0</div>
+    <div class="kpi-sub">ditë sëmundjeje</div>
+  </div>
+  <div class="kpi kpi-leje">
+    <div class="kpi-label">📄 Leje</div>
+    <div class="kpi-val" id="k-leje">0</div>
+    <div class="kpi-sub">ditë leje</div>
+  </div>
+</div>
+
+<!-- CALENDAR -->
+<div class="section-hdr">
+  <span>Kalendari</span>
+  <div class="section-line"></div>
+</div>
+<div class="cal-wrap">
+  <div class="cal">
+    <div class="cal-head">
+      <div>HËN</div><div>MAR</div><div>MËR</div><div>ENJ</div><div>PRE</div>
+      <div class="wk">SHT</div><div class="wk">DIE</div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+</div>
+<div class="bottom-pad"></div>
+
+<div class="toast" id="toast"></div>
+<div class="overlay" id="overlay"></div>
+
+<!-- DAY SHEET -->
+<div class="sheet" id="day-sheet">
+  <div class="pill"></div>
+  <div class="sh-title" id="sh-title"></div>
+  <div class="sh-sub" id="sh-sub"></div>
+
+  <div class="fl">Lloji i ditës</div>
+  <div class="tgrid">
+    <button class="tbtn" data-t="work">  <span class="ti">✓</span><span class="tl2">Prezent</span><span class="tc">✦</span></button>
+    <button class="tbtn" data-t="pushim"><span class="ti">☀</span><span class="tl2">Pushim</span> <span class="tc">✦</span></button>
+    <button class="tbtn" data-t="semure"><span class="ti">🩺</span><span class="tl2">Sëmurë</span><span class="tc">✦</span></button>
+    <button class="tbtn" data-t="leje">  <span class="ti">📄</span><span class="tl2">Leje</span>   <span class="tc">✦</span></button>
+  </div>
+
+  <div id="hrs-wrap">
+    <div class="fl">Orë pune</div>
+    <div class="hrs-row">
+      <span class="hrs-label">⏱ Orët e punuara</span>
+      <div class="stepper">
+        <button class="stbtn" id="hd">−</button>
+        <span class="stval" id="hv">8</span>
+        <button class="stbtn" id="hi">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loc-sec">
+    <div class="fl">Lokacioni i punës</div>
+    <div class="loc-opts" id="day-locs"></div>
+    <div class="gps-row" id="gps-day-btn">
+      <span class="gi">📡</span>
+      <span class="gtxt">
+        <span class="gt">Zbulo lokacionin tim</span>
+        <span class="gs">GPS — pozicioni aktual</span>
+      </span>
+      <span class="gps-spin" id="gps-spin">🔄</span>
+    </div>
+    <div id="mini-map"></div>
+  </div>
+
+  <div class="fl" style="margin-top:4px">Shënime</div>
+  <textarea class="notes-field" id="notes-f" placeholder="Ndonjë shënim për sot..."></textarea>
+
+  <button class="save-btn" id="save-btn">💾 &nbsp;Ruaj ditën</button>
+  <button class="del-btn" id="del-btn" style="display:none">🗑 &nbsp;Fshi të dhënat e kësaj dite</button>
+</div>
+
+<!-- LOCATIONS SHEET -->
+<div class="sheet" id="loc-sheet">
+  <div class="pill"></div>
+  <div class="sh-title">📍 Lokacionet</div>
+  <div class="sh-sub">Menaxho vendet e punës</div>
+  <div class="mloc-list" id="mloc-list"></div>
+  <div class="add-loc-row">
+    <span>🏢</span>
+    <input type="text" id="new-loc" placeholder="Emri i lokacionit..." maxlength="30">
+    <button id="add-loc-btn">Shto</button>
+  </div>
+  <button class="gps-add" id="gps-add-btn">📡 &nbsp;Shto lokacionin tim aktual me GPS</button>
+  <div id="manage-map"></div>
+</div>
+
+<!-- SETTINGS SHEET -->
+<div class="sheet" id="set-sheet">
+  <div class="pill"></div>
+  <div class="sh-title">Cilësimet</div>
+  <div class="sh-sub">Personalizimi</div>
+  <div class="sg">
+    <div class="sg-lbl">Kujtues ditor</div>
+    <div class="srow">
+      <div><div class="slbl">Aktivizo kujtuesin</div><div class="ssub">Njoftim çdo ditë pune</div></div>
+      <label class="toggle"><input type="checkbox" id="rem-tog"><span class="tsldr"></span></label>
+    </div>
+    <div class="srow" id="time-row" style="opacity:.35;pointer-events:none">
+      <div><div class="slbl">Ora</div><div class="ssub">Kur të njoftojmë</div></div>
+      <input type="time" class="tinp" id="rem-time" value="17:00">
+    </div>
+    <div class="srow">
+      <div class="slbl">Lejet</div>
+      <span class="nbadge" id="n-badge">...</span>
+    </div>
+    <button class="perm-btn" id="perm-btn" style="display:none">Lejo njoftimet</button>
+    <button class="test-btn" id="test-btn" style="display:none">🔔 &nbsp;Testo njoftimin</button>
+    <div class="ios-note" id="ios-note" style="display:none">
+      <strong>📱 iPhone:</strong> Njoftimet kërkojnë iOS 16.4+, app në Home Screen dhe leje nga Safari.
+    </div>
+  </div>
+</div>
+
+<script>
+const MONTHS=["Janar","Shkurt","Mars","Prill","Maj","Qershor","Korrik","Gusht","Shtator","Tetor","Nëntor","Dhjetor"];
+const DNAMES=["E Diel","E Hënë","E Martë","E Mërkurë","E Enjte","E Premte","E Shtunë"];
+const ICONS=["🏢","🏠","☕","🏭","🏨","🏫","🏥","💻","🌍","🏗","⚡","🎯","🏪","🏬","🏦"];
+const T=new Date();
+let Y=T.getFullYear(), M=T.getMonth();
+let data={}, locs=[], swR=null, filterLoc='';
+let selDay=null, selType='work', selHrs=8, selLoc='', selLocAddr='';
+let mMap=null, mMark=null, manMap=null, manMark=null;
+
+// Storage
+const sk=()=>`wr-${Y}-${String(M+1).padStart(2,'0')}`;
+const load=()=>{try{data=JSON.parse(localStorage.getItem(sk())||'{}')}catch{data={}}};
+const save=()=>localStorage.setItem(sk(),JSON.stringify(data));
+const loadL=()=>{try{locs=JSON.parse(localStorage.getItem('wr-locs')||'[]')}catch{locs=[]}};
+const saveL=()=>localStorage.setItem('wr-locs',JSON.stringify(locs));
+const getR=()=>({en:localStorage.getItem('rem-en')==='true',t:localStorage.getItem('rem-t')||'17:00'});
+const setR=(e,t)=>{localStorage.setItem('rem-en',e);localStorage.setItem('rem-t',t)};
+
+// Toast
+function toast(msg,d=2400){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),d);}
+
+// Cal helpers
+const dim=(y,m)=>new Date(y,m+1,0).getDate();
+const off=(y,m)=>{const d=new Date(y,m,1).getDay();return(d+6)%7;};
+const wknd=(y,m,d)=>{const w=new Date(y,m,d).getDay();return w===0||w===6;};
+const logged=()=>{
+  if(M!==T.getMonth()||Y!==T.getFullYear())return true;
+  if(wknd(Y,M,T.getDate()))return true;
+  return!!data[T.getDate()];
+};
+
+function render(){
+  document.getElementById('mname').textContent=MONTHS[M];
+  document.getElementById('myear').textContent=Y;
+  renderStrip(); renderGrid(); renderKPI(); renderBanner();
+}
+
+function renderStrip(){
+  const s=document.getElementById('loc-strip');
+  if(!locs.length){s.style.display='none';return;}
+  s.style.display='flex'; s.innerHTML='';
+  const all=document.createElement('div');
+  all.className='lchip'+(filterLoc===''?' on':'');
+  all.innerHTML='<div class="lchip-dot"></div> Të gjitha';
+  all.onclick=()=>{filterLoc='';render();};
+  s.appendChild(all);
+  locs.forEach(l=>{
+    const c=document.createElement('div');
+    c.className='lchip'+(filterLoc===l.name?' on':'');
+    c.textContent=l.icon+' '+l.name;
+    c.onclick=()=>{filterLoc=filterLoc===l.name?'':l.name;render();};
+    s.appendChild(c);
+  });
+}
+
+function renderGrid(){
+  const g=document.getElementById('cal-grid'); g.innerHTML='';
+  const total=dim(Y,M), o=off(Y,M);
+  for(let i=0;i<o;i++){const e=document.createElement('div');e.className='day empty';g.appendChild(e);}
+  for(let d=1;d<=total;d++){
+    const wk=wknd(Y,M,d);
+    const isTd=d===T.getDate()&&M===T.getMonth()&&Y===T.getFullYear();
+    const dd=data[d];
+    const dim2=filterLoc&&(!dd||dd.loc!==filterLoc);
+    const cell=document.createElement('div');
+    cell.className='day'+(wk?' wknd':'')+(isTd?' today':'')+(selDay===d?' sel':'');
+    if(dim2)cell.style.opacity='.2';
+    const dn=document.createElement('div');dn.className='dn';dn.textContent=d;cell.appendChild(dn);
+    if(dd){
+      const cls={work:'tw',pushim:'tp',semure:'ts',leje:'tl'}[dd.type];
+      const ab={work:'P',pushim:'PU',semure:'S',leje:'L'}[dd.type];
+      const t=document.createElement('div');t.className='dtag '+cls;t.textContent=ab;cell.appendChild(t);
+      if(dd.type==='work'&&dd.hrs){const h=document.createElement('div');h.className='dh';h.textContent=dd.hrs+'h';cell.appendChild(h);}
+      if(dd.loc){const l=locs.find(x=>x.name===dd.loc);const le=document.createElement('div');le.className='dloc';le.textContent=(l?l.icon+' ':'')+dd.loc;cell.appendChild(le);}
+    }
+    if(!wk)cell.onclick=()=>openDay(d);
+    g.appendChild(cell);
+  }
+}
+
+function renderKPI(){
+  let w=0,p=0,s=0,l=0,h=0;
+  const rows=filterLoc?Object.values(data).filter(v=>v.loc===filterLoc):Object.values(data);
+  rows.forEach(v=>{if(v.type==='work'){w++;h+=v.hrs||0;}else if(v.type==='pushim')p++;else if(v.type==='semure')s++;else l++;});
+  document.getElementById('k-work').textContent=w;
+  document.getElementById('k-hrs').textContent=h+' orë totale';
+  document.getElementById('k-pushim').textContent=p;
+  document.getElementById('k-semure').textContent=s;
+  document.getElementById('k-leje').textContent=l;
+}
+
+function renderBanner(){document.getElementById('banner').classList.toggle('show',!logged());}
+
+// Day sheet
+function openDay(d){
+  selDay=d; const dd=data[d];
+  selType=dd?dd.type:'work'; selHrs=dd?.hrs||8; selLoc=dd?.loc||''; selLocAddr=dd?.locAddr||'';
+  const dt=new Date(Y,M,d);
+  document.getElementById('sh-title').textContent=d+' '+MONTHS[M]+' '+Y;
+  document.getElementById('sh-sub').textContent=DNAMES[dt.getDay()];
+  document.getElementById('hv').textContent=selHrs;
+  document.getElementById('notes-f').value=dd?.notes||'';
+  document.getElementById('del-btn').style.display=dd?'flex':'none';
+  document.getElementById('mini-map').style.display='none';
+  document.getElementById('gps-spin').style.display='none';
+  renderDayLocs(); updateTypeUI();
+  openSheet('day-sheet'); renderGrid();
+}
+
+function renderDayLocs(){
+  const c=document.getElementById('day-locs');
+  const s=document.getElementById('loc-sec');
+  s.style.display=locs.length?'block':'none';
+  c.innerHTML='';
+  locs.forEach(l=>{
+    const b=document.createElement('button');
+    b.className='lopt'+(selLoc===l.name?' lon':'');
+    b.innerHTML=`<span class="lico">${l.icon}</span><div class="linfo"><div class="lname">${l.name}</div>${l.address?`<div class="laddr">${l.address}</div>`:''}</div>`;
+    b.onclick=()=>{
+      selLoc=selLoc===l.name?'':l.name; selLocAddr=selLoc?l.address||'':'';
+      document.getElementById('mini-map').style.display='none';
+      if(selLoc&&l.lat&&l.lon)showMiniMap(l.lat,l.lon);
+      renderDayLocs();
+    };
+    c.appendChild(b);
+  });
+}
+
+function showMiniMap(lat,lon){
+  const el=document.getElementById('mini-map'); el.style.display='block';
+  setTimeout(()=>{
+    if(!mMap){
+      mMap=L.map('mini-map',{zoomControl:false,attributionControl:false}).setView([lat,lon],15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mMap);
+      mMark=L.marker([lat,lon]).addTo(mMap);
+    } else {mMap.setView([lat,lon],15);mMark.setLatLng([lat,lon]);mMap.invalidateSize();}
+  },100);
+}
+
+function updateTypeUI(){
+  document.querySelectorAll('.tbtn').forEach(b=>{
+    const t=b.dataset.t; b.className='tbtn';
+    if(selType===t) b.classList.add({work:'aw',pushim:'ap',semure:'as',leje:'al'}[t]);
+  });
+  document.getElementById('hrs-wrap').style.display=selType==='work'?'block':'none';
+  const bg={work:'var(--lime)',pushim:'var(--red)',semure:'var(--amber)',leje:'var(--blue)'};
+  const sb=document.getElementById('save-btn');
+  sb.style.background=bg[selType];
+  sb.style.color=selType==='work'?'var(--void)':'var(--white)';
+  sb.style.boxShadow=selType==='work'?'0 4px 20px rgba(143,208,64,.3)':'none';
+}
+
+document.querySelectorAll('.tbtn').forEach(b=>b.addEventListener('click',()=>{selType=b.dataset.t;updateTypeUI();}));
+document.getElementById('hd').onclick=()=>{if(selHrs>1){selHrs--;document.getElementById('hv').textContent=selHrs;}};
+document.getElementById('hi').onclick=()=>{if(selHrs<24){selHrs++;document.getElementById('hv').textContent=selHrs;}};
+
+document.getElementById('save-btn').onclick=()=>{
+  data[selDay]={type:selType,hrs:selType==='work'?selHrs:0,loc:selLoc,locAddr:selLocAddr,notes:document.getElementById('notes-f').value.trim()};
+  save();closeSheet();renderKPI();renderBanner();schedRem();toast('✦ E ruajtur me sukses');
+};
+document.getElementById('del-btn').onclick=()=>{delete data[selDay];save();closeSheet();renderKPI();renderBanner();};
+document.getElementById('banner-btn').onclick=()=>openDay(T.getDate());
+
+// GPS
+async function getPos(){return new Promise((r,j)=>{if(!navigator.geolocation){j(new Error('GPS mungon'));return;}navigator.geolocation.getCurrentPosition(r,j,{timeout:10000,enableHighAccuracy:true});});}
+async function revGeo(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=sq`);const j=await r.json();const a=j.address||{};return a.road||(a.suburb&&a.city?a.suburb+', '+a.city:null)||a.city||a.town||j.display_name||'Lokacioni im';}catch{return 'Lokacioni im';}}
+
+document.getElementById('gps-day-btn').onclick=async()=>{
+  const spin=document.getElementById('gps-spin'); spin.style.display='inline';
+  try{
+    const p=await getPos(); const{latitude:lat,longitude:lon}=p.coords;
+    const addr=await revGeo(lat,lon); spin.style.display='none';
+    showMiniMap(lat,lon); toast('📍 '+addr.substring(0,35));
+    if(confirm('Lokacioni:\n'+addr+'\n\nDo ta ruash?')){
+      const name=addr.length>30?addr.substring(0,30):addr;
+      if(!locs.find(l=>l.name===name)){locs.push({name,icon:ICONS[locs.length%ICONS.length],address:addr,lat,lon});saveL();}
+      selLoc=name; selLocAddr=addr; renderDayLocs();
+    }
+  }catch{spin.style.display='none';toast('⚠ GPS nuk funksionoi');}
+};
+
+// Manage locs
+function renderManageLocs(){
+  const list=document.getElementById('mloc-list'); list.innerHTML='';
+  if(!locs.length){list.innerHTML='<div style="text-align:center;color:var(--dim);font-size:13px;padding:16px 0">Nuk ke lokacione të shtuara.</div>';return;}
+  locs.forEach((l,i)=>{
+    const row=document.createElement('div'); row.className='mloc-row';
+    const del=document.createElement('button'); del.className='mloc-del'; del.textContent='×';
+    del.onclick=()=>{if(confirm('Fshi "'+l.name+'"?')){locs.splice(i,1);saveL();renderManageLocs();renderStrip();}};
+    row.innerHTML=`<span class="mloc-ico">${l.icon}</span><div class="mloc-info"><div class="mloc-name">${l.name}</div>${l.address?`<div class="mloc-addr">${l.address}</div>`:''}</div>`;
+    row.appendChild(del); list.appendChild(row);
+  });
+}
+
+document.getElementById('add-loc-btn').onclick=()=>{
+  const inp=document.getElementById('new-loc'); const name=inp.value.trim(); if(!name)return;
+  if(locs.find(l=>l.name===name)){toast('⚠ Ekziston tashmë');inp.value='';return;}
+  locs.push({name,icon:ICONS[locs.length%ICONS.length]});
+  saveL(); inp.value=''; renderManageLocs(); renderStrip(); toast('✦ Lokacioni u shtua');
+};
+document.getElementById('new-loc').onkeydown=e=>{if(e.key==='Enter')document.getElementById('add-loc-btn').click();};
+
+document.getElementById('gps-add-btn').onclick=async()=>{
+  const btn=document.getElementById('gps-add-btn'); btn.textContent='🔄 Duke marrë GPS...'; btn.disabled=true;
+  try{
+    const p=await getPos(); const{latitude:lat,longitude:lon}=p.coords;
+    const addr=await revGeo(lat,lon);
+    const name=prompt('Emri i lokacionit:',addr.length>30?addr.substring(0,30):addr);
+    if(name&&!locs.find(l=>l.name===name)){
+      locs.push({name,icon:ICONS[locs.length%ICONS.length],address:addr,lat,lon});
+      saveL(); renderManageLocs(); renderStrip();
+      const mapEl=document.getElementById('manage-map'); mapEl.style.display='block';
+      setTimeout(()=>{
+        if(!manMap){manMap=L.map('manage-map',{zoomControl:false,attributionControl:false}).setView([lat,lon],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(manMap);manMark=L.marker([lat,lon]).addTo(manMap).bindPopup(name).openPopup();}
+        else{manMap.setView([lat,lon],14);manMark.setLatLng([lat,lon]).bindPopup(name).openPopup();manMap.invalidateSize();}
+      },200);
+      toast('✦ '+name+' u shtua');
+    }
+  }catch{toast('⚠ GPS nuk funksionoi');}
+  finally{btn.textContent='📡  Shto lokacionin tim aktual me GPS';btn.disabled=false;}
+};
+
+document.getElementById('loc-btn').onclick=()=>{renderManageLocs();openSheet('loc-sheet');};
+
+// PDF
+function exportPDF(){
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const W=210,mL=16,mR=16,cW=W-mL-mR;
+  let y=18;
+
+  let wD=0,pD=0,sD=0,lD=0,hrs=0; const wE=[];
+  const tot=dim(Y,M);
+  for(let d=1;d<=tot;d++){const e=data[d];if(!e)continue;if(e.type==='work'){wD++;hrs+=e.hrs||0;wE.push({d,e});}else if(e.type==='pushim')pD++;else if(e.type==='semure')sD++;else lD++;}
+  const wkDays=Array.from({length:tot},(_,i)=>i+1).filter(d=>!wknd(Y,M,d)).length;
+
+  // Header
+  doc.setFillColor(8,12,6);
+  doc.roundedRect(mL,y,cW,32,5,5,'F');
+  // Green accent bar
+  doc.setFillColor(143,208,64);
+  doc.roundedRect(mL,y,5,32,3,3,'F');
+  doc.rect(mL+2,y,3,32,'F');
+  doc.setTextColor(242,245,238); doc.setFontSize(20); doc.setFont('helvetica','bold');
+  doc.text('WorkLog',mL+12,y+14);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(143,208,64);
+  doc.text('RAPORT MUJOR — '+MONTHS[M].toUpperCase()+' '+Y,mL+12,y+22);
+  doc.setTextColor(90,112,72);
+  doc.text('Gjeneruar: '+T.toLocaleDateString('sq-AL'),W-mR,y+28,{align:'right'});
+  y+=42;
+
+  // KPI cards
+  const cw4=(cW-9)/4;
+  [{l:'Ditë pune',v:wD,s:hrs+'h totale',r:143,g:208,b:64,fr:8,fg:12,fb:6},
+   {l:'Pushim',v:pD,s:'ditë',r:255,g:85,b:51,fr:30,fg:10,fb:5},
+   {l:'Sëmurë',v:sD,s:'ditë',r:240,g:160,b:48,fr:30,fg:22,fb:5},
+   {l:'Leje',v:lD,s:'ditë',r:68,g:136,b:221,fr:5,fg:12,fb:30}
+  ].forEach((c,i)=>{
+    const x=mL+i*(cw4+3);
+    doc.setFillColor(c.fr,c.fg,c.fb); doc.roundedRect(x,y,cw4,26,4,4,'F');
+    doc.setFillColor(c.r,c.g,c.b); doc.roundedRect(x,y,cw4,4,4,4,'F'); doc.rect(x,y+2,cw4,2,'F');
+    doc.setTextColor(c.r,c.g,c.b); doc.setFontSize(18); doc.setFont('helvetica','bold');
+    doc.text(String(c.v),x+cw4/2,y+16,{align:'center'});
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(200,220,180);
+    doc.text(c.l,x+cw4/2,y+21,{align:'center'});
+    doc.text(c.s,x+cw4/2,y+25,{align:'center'});
+  });
+  y+=34;
+
+  // Stats bar
+  doc.setFillColor(20,30,16); doc.roundedRect(mL,y,cW,12,3,3,'F');
+  doc.setTextColor(120,160,90); doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  const stats=['Ditë pune: '+wkDays,'Mesatare: '+(wD?Math.round(hrs/wD):0)+'h/ditë','Mungesë: '+(pD+sD+lD)+' ditë','Prezenca: '+Math.round(wD/Math.max(wkDays-pD-lD,1)*100)+'%'];
+  stats.forEach((s,i)=>doc.text(s,mL+4+i*(cW/4),y+8));
+  y+=20;
+
+  // Table
+  const cols=[['Data',32],['Lloji',22],['Orë',16],['Lokacioni',52],['Shënime',46]];
+  doc.setFillColor(8,12,6); doc.rect(mL,y,cW,9,'F');
+  doc.setFillColor(143,208,64); doc.rect(mL,y,cW,1.5,'F');
+  let cx=mL+3; doc.setTextColor(143,208,64); doc.setFontSize(7); doc.setFont('helvetica','bold');
+  cols.forEach(([l,w])=>{doc.text(l,cx,y+6);cx+=w;}); y+=11;
+
+  for(let d=1;d<=tot;d++){
+    const e=data[d]; if(!e)continue;
+    const dt=new Date(Y,M,d); const even=(d%2===0);
+    doc.setFillColor(even?18:14, even?26:22, even?14:10);
+    doc.rect(mL,y-5,cW,8,'F');
+    const tMap={work:['Prezent',[143,208,64]],pushim:['Pushim',[255,85,51]],semure:['Sëmurë',[240,160,48]],leje:['Leje',[68,136,221]]};
+    const[tl,tc]=tMap[e.type];
+    const row=[DNAMES[dt.getDay()].replace('E ','')+' '+d+'.'+String(M+1).padStart(2,'0'),tl,e.type==='work'?(e.hrs||0)+'h':'—',(e.loc||'—').substring(0,28),(e.notes||'—').substring(0,22)];
+    cx=mL+3;
+    cols.forEach(([,w],ci)=>{
+      if(ci===1){doc.setTextColor(...tc);doc.setFont('helvetica','bold');}
+      else{doc.setTextColor(180,200,160);doc.setFont('helvetica','normal');}
+      doc.setFontSize(7.5); doc.text(row[ci],cx,y); cx+=w;
+    });
+    y+=8;
+    if(y>272){doc.addPage();y=20;}
+  }
+
+  // Loc summary
+  if(locs.length&&wE.length){
+    y+=6;
+    doc.setFillColor(8,12,6); doc.roundedRect(mL,y,cW,9,3,3,'F');
+    doc.setFillColor(143,208,64); doc.roundedRect(mL,y,cW,1.5,3,3,'F'); doc.rect(mL,y+.5,cW,1,'F');
+    doc.setTextColor(143,208,64); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    doc.text('DITËT SIPAS LOKACIONIT',mL+4,y+6); y+=12;
+    const lc={};
+    wE.forEach(({e})=>{const k=e.loc||'Pa lokacion';lc[k]=(lc[k]||0)+1;});
+    Object.entries(lc).forEach(([name,cnt],i)=>{
+      const l=locs.find(x=>x.name===name);
+      doc.setFillColor(i%2===0?18:14,i%2===0?26:22,i%2===0?14:10);
+      doc.rect(mL,y-5,cW,8,'F');
+      doc.setTextColor(180,200,160); doc.setFontSize(8); doc.setFont('helvetica','normal');
+      doc.text((l?l.name:name),mL+4,y);
+      doc.setTextColor(143,208,64); doc.setFont('helvetica','bold'); doc.text(cnt+' ditë',W-mR-2,y,{align:'right'});
+      if(l?.address){doc.setTextColor(90,112,72);doc.setFontSize(7);doc.text(l.address.substring(0,55),mL+55,y);}
+      y+=8;
+    });
+  }
+
+  // Footer
+  doc.setFillColor(8,12,6); doc.rect(0,283,210,14,'F');
+  doc.setFillColor(143,208,64); doc.rect(0,283,210,1.5,'F');
+  doc.setTextColor(90,112,72); doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.text('WorkLog  ·  '+MONTHS[M]+' '+Y+'  ·  Raport i gjeneruar automatikisht',W/2,291,{align:'center'});
+
+  doc.save('WorkLog-'+MONTHS[M]+'-'+Y+'.pdf');
+  toast('📄 PDF u shkarkua!');
+}
+document.getElementById('pdf-btn').onclick=exportPDF;
+
+// Settings
+function updSettings(){
+  const s=getR();
+  document.getElementById('rem-tog').checked=s.en;
+  document.getElementById('rem-time').value=s.t;
+  document.getElementById('time-row').style.opacity=s.en?'1':'0.35';
+  document.getElementById('time-row').style.pointerEvents=s.en?'all':'none';
+  const perm=Notification.permission;
+  const badge=document.getElementById('n-badge');
+  const pb=document.getElementById('perm-btn'); const tb=document.getElementById('test-btn');
+  if(perm==='granted'){badge.textContent='✦ Aktive';badge.className='nbadge nb-ok';pb.style.display='none';tb.style.display=s.en?'block':'none';}
+  else if(perm==='denied'){badge.textContent='✗ Bllokuar';badge.className='nbadge nb-no';pb.style.display='none';tb.style.display='none';}
+  else{badge.textContent='? Jo lejo';badge.className='nbadge nb-no';pb.style.display='block';tb.style.display='none';}
+  document.getElementById('ios-note').style.display=/iPad|iPhone|iPod/.test(navigator.userAgent)?'block':'none';
+}
+document.getElementById('rem-tog').onchange=function(){const s=getR();setR(this.checked,s.t);updSettings();schedRem();};
+document.getElementById('rem-time').onchange=function(){const s=getR();setR(s.en,this.value);schedRem();};
+document.getElementById('perm-btn').onclick=async()=>{const r=await Notification.requestPermission();if(r==='granted'){setR(true,document.getElementById('rem-time').value||'17:00');document.getElementById('rem-tog').checked=true;}updSettings();schedRem();};
+document.getElementById('test-btn').onclick=()=>{if(swR?.active)swR.active.postMessage({type:'TEST_NOTIFICATION'});};
+document.getElementById('set-btn').onclick=()=>{updSettings();openSheet('set-sheet');};
+
+function schedRem(){
+  const s=getR(); if(!s.en||!swR||Notification.permission!=='granted')return;
+  const now=new Date(); const[h,m]=s.t.split(':').map(Number);
+  const target=new Date(now.getFullYear(),now.getMonth(),now.getDate(),h,m,0);
+  const delay=target-now; if(delay>0&&swR.active)swR.active.postMessage({type:'SCHEDULE_REMINDER',delay});
+}
+
+// Sheet control
+let activeSheet=null;
+function openSheet(id){document.getElementById('overlay').classList.add('on');document.getElementById(id).classList.add('on');activeSheet=id;}
+function closeSheet(){document.getElementById('overlay').classList.remove('on');document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('on'));if(activeSheet==='day-sheet'){selDay=null;renderGrid();}activeSheet=null;}
+document.getElementById('overlay').onclick=closeSheet;
+
+// Nav
+document.getElementById('prev').onclick=()=>{filterLoc='';if(M===0){Y--;M=11;}else M--;load();render();};
+document.getElementById('next').onclick=()=>{filterLoc='';if(M===11){Y++;M=0;}else M++;load();render();};
+
+// SW
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(r=>{swR=r;schedRem();}).catch(()=>{});}
+
+// Init
+loadL(); load(); render();
+</script>
+</body>
+</html>
