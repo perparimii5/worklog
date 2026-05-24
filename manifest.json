@@ -1,11 +1,12 @@
 {
-  "name": "Raport Mujor",
-  "short_name": "Raport",
-  "description": "Regjistrim personal i ditëve të punës",
+  "name": "WorkLog Pro",
+  "short_name": "WorkLog",
+  "description": "Raport personal mujor per dite pune, ore, pushime dhe lokacione.",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#3B6D11",
+  "background_color": "#080C06",
+  "theme_color": "#080C06",
   "orientation": "portrait",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },

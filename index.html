@@ -515,6 +515,18 @@ body::before {
   box-shadow: 0 4px 24px rgba(0,0,0,.4);
 }
 .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── BACKUP / IMPORT ── */
+.data-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+.data-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--soft);
+  border-radius: var(--rs); padding: 12px 10px; font-family: var(--font-ui);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.data-btn:active { background: var(--raised); color: var(--glow); }
+.data-btn.primary { background: var(--lime); color: var(--void); border-color: var(--lime); }
+.data-btn.danger { background: var(--red-bg); color: var(--red); border-color: rgba(255,85,51,.25); }
+.secure-note { margin-top: 10px; font-size: 12px; line-height: 1.45; color: var(--dim); }
 </style>
 </head>
 <body>
@@ -618,7 +630,7 @@ body::before {
       <span class="hrs-label">⏱ Orët e punuara</span>
       <div class="stepper">
         <button class="stbtn" id="hd">−</button>
-        <span class="stval" id="hv">8</span>
+        <span class="stval" id="hv">8,5</span>
         <button class="stbtn" id="hi">+</button>
       </div>
     </div>
@@ -685,6 +697,25 @@ body::before {
       <strong>📱 iPhone:</strong> Njoftimet kërkojnë iOS 16.4+, app në Home Screen dhe leje nga Safari.
     </div>
   </div>
+
+  <div class="sg">
+    <div class="sg-lbl">Backup & ruajtje</div>
+    <div class="srow">
+      <div>
+        <div class="slbl">Të dhënat lokale</div>
+        <div class="ssub">Eksporto/importo JSON për siguri</div>
+      </div>
+      <span class="nbadge nb-ok" id="backup-badge">Auto</span>
+    </div>
+    <div class="data-actions">
+      <button class="data-btn primary" id="export-json-btn">⬇ Backup</button>
+      <button class="data-btn" id="import-json-btn">⬆ Import</button>
+      <button class="data-btn" id="restore-json-btn">↺ Rikthe</button>
+      <button class="data-btn danger" id="clear-month-btn">Fshi muajin</button>
+    </div>
+    <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+    <div class="secure-note">Ruajtja është lokale në pajisje. Backup-i JSON është mënyra më e sigurt për të mos humbur të dhënat kur telefoni/browseri pastron cache.</div>
+  </div>
 </div>
 
 <script>
@@ -694,17 +725,41 @@ const ICONS=["🏢","🏠","☕","🏭","🏨","🏫","🏥","💻","🌍","🏗
 const T=new Date();
 let Y=T.getFullYear(), M=T.getMonth();
 let data={}, locs=[], swR=null, filterLoc='';
-let selDay=null, selType='work', selHrs=8, selLoc='', selLocAddr='';
+let selDay=null, selType='work', selHrs=8.5, selLoc='', selLocAddr='';
 let mMap=null, mMark=null, manMap=null, manMark=null;
 
 // Storage
 const sk=()=>`wr-${Y}-${String(M+1).padStart(2,'0')}`;
 const load=()=>{try{data=JSON.parse(localStorage.getItem(sk())||'{}')}catch{data={}}};
-const save=()=>localStorage.setItem(sk(),JSON.stringify(data));
+const save=(snap=true)=>{localStorage.setItem(sk(),JSON.stringify(data));if(snap)writeSnapshot();};
 const loadL=()=>{try{locs=JSON.parse(localStorage.getItem('wr-locs')||'[]')}catch{locs=[]}};
-const saveL=()=>localStorage.setItem('wr-locs',JSON.stringify(locs));
+const saveL=(snap=true)=>{localStorage.setItem('wr-locs',JSON.stringify(locs));if(snap)writeSnapshot();};
 const getR=()=>({en:localStorage.getItem('rem-en')==='true',t:localStorage.getItem('rem-t')||'17:00'});
 const setR=(e,t)=>{localStorage.setItem('rem-en',e);localStorage.setItem('rem-t',t)};
+const fmtH=v=>{const n=Number(v||0);return Number.isInteger(n)?String(n):String(n).replace('.',',');};
+const clampH=v=>Math.min(24,Math.max(0.5,Math.round(Number(v||8.5)*2)/2));
+function collectBackup(){
+  const months={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(/^wr-\d{4}-\d{2}$/.test(k)){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{months[k]={}}}
+  }
+  return {app:'WorkLog',version:'2.0',exportedAt:new Date().toISOString(),months,locations:locs,reminders:getR()};
+}
+function writeSnapshot(){try{localStorage.setItem('wr-backup-last',JSON.stringify(collectBackup()));localStorage.setItem('wr-backup-at',new Date().toISOString());}catch{}}
+function applyBackup(b){
+  if(!b||!b.months)throw new Error('Backup jo valid');
+  Object.keys(localStorage).filter(k=>/^wr-\d{4}-\d{2}$/.test(k)).forEach(k=>localStorage.removeItem(k));
+  Object.entries(b.months).forEach(([k,v])=>{if(/^wr-\d{4}-\d{2}$/.test(k))localStorage.setItem(k,JSON.stringify(v||{}));});
+  if(Array.isArray(b.locations)){locs=b.locations;saveL(false);}
+  if(b.reminders){setR(!!b.reminders.en,b.reminders.t||'17:00');}
+  load(); render();
+}
+function downloadJSON(name,obj){
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
 
 // Toast
 function toast(msg,d=2400){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),d);}
@@ -715,7 +770,6 @@ const off=(y,m)=>{const d=new Date(y,m,1).getDay();return(d+6)%7;};
 const wknd=(y,m,d)=>{const w=new Date(y,m,d).getDay();return w===0||w===6;};
 const logged=()=>{
   if(M!==T.getMonth()||Y!==T.getFullYear())return true;
-  if(wknd(Y,M,T.getDate()))return true;
   return!!data[T.getDate()];
 };
 
@@ -760,10 +814,10 @@ function renderGrid(){
       const cls={work:'tw',pushim:'tp',semure:'ts',leje:'tl'}[dd.type];
       const ab={work:'P',pushim:'PU',semure:'S',leje:'L'}[dd.type];
       const t=document.createElement('div');t.className='dtag '+cls;t.textContent=ab;cell.appendChild(t);
-      if(dd.type==='work'&&dd.hrs){const h=document.createElement('div');h.className='dh';h.textContent=dd.hrs+'h';cell.appendChild(h);}
+      if(dd.type==='work'&&dd.hrs){const h=document.createElement('div');h.className='dh';h.textContent=fmtH(dd.hrs)+'h';cell.appendChild(h);}
       if(dd.loc){const l=locs.find(x=>x.name===dd.loc);const le=document.createElement('div');le.className='dloc';le.textContent=(l?l.icon+' ':'')+dd.loc;cell.appendChild(le);}
     }
-    if(!wk)cell.onclick=()=>openDay(d);
+    cell.onclick=()=>openDay(d);
     g.appendChild(cell);
   }
 }
@@ -773,7 +827,7 @@ function renderKPI(){
   const rows=filterLoc?Object.values(data).filter(v=>v.loc===filterLoc):Object.values(data);
   rows.forEach(v=>{if(v.type==='work'){w++;h+=v.hrs||0;}else if(v.type==='pushim')p++;else if(v.type==='semure')s++;else l++;});
   document.getElementById('k-work').textContent=w;
-  document.getElementById('k-hrs').textContent=h+' orë totale';
+  document.getElementById('k-hrs').textContent=fmtH(h)+' orë totale';
   document.getElementById('k-pushim').textContent=p;
   document.getElementById('k-semure').textContent=s;
   document.getElementById('k-leje').textContent=l;
@@ -784,11 +838,11 @@ function renderBanner(){document.getElementById('banner').classList.toggle('show
 // Day sheet
 function openDay(d){
   selDay=d; const dd=data[d];
-  selType=dd?dd.type:'work'; selHrs=dd?.hrs||8; selLoc=dd?.loc||''; selLocAddr=dd?.locAddr||'';
+  selType=dd?dd.type:'work'; selHrs=clampH(dd?.hrs||8.5); selLoc=dd?.loc||''; selLocAddr=dd?.locAddr||'';
   const dt=new Date(Y,M,d);
   document.getElementById('sh-title').textContent=d+' '+MONTHS[M]+' '+Y;
   document.getElementById('sh-sub').textContent=DNAMES[dt.getDay()];
-  document.getElementById('hv').textContent=selHrs;
+  document.getElementById('hv').textContent=fmtH(selHrs);
   document.getElementById('notes-f').value=dd?.notes||'';
   document.getElementById('del-btn').style.display=dd?'flex':'none';
   document.getElementById('mini-map').style.display='none';
@@ -841,11 +895,11 @@ function updateTypeUI(){
 }
 
 document.querySelectorAll('.tbtn').forEach(b=>b.addEventListener('click',()=>{selType=b.dataset.t;updateTypeUI();}));
-document.getElementById('hd').onclick=()=>{if(selHrs>1){selHrs--;document.getElementById('hv').textContent=selHrs;}};
-document.getElementById('hi').onclick=()=>{if(selHrs<24){selHrs++;document.getElementById('hv').textContent=selHrs;}};
+document.getElementById('hd').onclick=()=>{if(selHrs>1){selHrs--;document.getElementById('hv').textContent=fmtH(selHrs);}};
+document.getElementById('hi').onclick=()=>{if(selHrs<24){selHrs++;document.getElementById('hv').textContent=fmtH(selHrs);}};
 
 document.getElementById('save-btn').onclick=()=>{
-  data[selDay]={type:selType,hrs:selType==='work'?selHrs:0,loc:selLoc,locAddr:selLocAddr,notes:document.getElementById('notes-f').value.trim()};
+  data[selDay]={type:selType,hrs:selType==='work'?clampH(selHrs):0,loc:selLoc,locAddr:selLocAddr,notes:document.getElementById('notes-f').value.trim()};
   save();closeSheet();renderKPI();renderBanner();schedRem();toast('✦ E ruajtur me sukses');
 };
 document.getElementById('del-btn').onclick=()=>{delete data[selDay];save();closeSheet();renderKPI();renderBanner();};
@@ -941,7 +995,7 @@ function exportPDF(){
 
   // KPI cards
   const cw4=(cW-9)/4;
-  [{l:'Ditë pune',v:wD,s:hrs+'h totale',r:143,g:208,b:64,fr:8,fg:12,fb:6},
+  [{l:'Ditë pune',v:wD,s:fmtH(hrs)+'h totale',r:143,g:208,b:64,fr:8,fg:12,fb:6},
    {l:'Pushim',v:pD,s:'ditë',r:255,g:85,b:51,fr:30,fg:10,fb:5},
    {l:'Sëmurë',v:sD,s:'ditë',r:240,g:160,b:48,fr:30,fg:22,fb:5},
    {l:'Leje',v:lD,s:'ditë',r:68,g:136,b:221,fr:5,fg:12,fb:30}
@@ -960,7 +1014,7 @@ function exportPDF(){
   // Stats bar
   doc.setFillColor(20,30,16); doc.roundedRect(mL,y,cW,12,3,3,'F');
   doc.setTextColor(120,160,90); doc.setFontSize(7.5); doc.setFont('helvetica','normal');
-  const stats=['Ditë pune: '+wkDays,'Mesatare: '+(wD?Math.round(hrs/wD):0)+'h/ditë','Mungesë: '+(pD+sD+lD)+' ditë','Prezenca: '+Math.round(wD/Math.max(wkDays-pD-lD,1)*100)+'%'];
+  const stats=['Ditë pune: '+wkDays,'Mesatare: '+fmtH(wD?Math.round((hrs/wD)*10)/10:0)+'h/ditë','Mungesë: '+(pD+sD+lD)+' ditë','Prezenca: '+Math.round(wD/Math.max(wkDays-pD-lD,1)*100)+'%'];
   stats.forEach((s,i)=>doc.text(s,mL+4+i*(cW/4),y+8));
   y+=20;
 
@@ -978,7 +1032,7 @@ function exportPDF(){
     doc.rect(mL,y-5,cW,8,'F');
     const tMap={work:['Prezent',[143,208,64]],pushim:['Pushim',[255,85,51]],semure:['Sëmurë',[240,160,48]],leje:['Leje',[68,136,221]]};
     const[tl,tc]=tMap[e.type];
-    const row=[DNAMES[dt.getDay()].replace('E ','')+' '+d+'.'+String(M+1).padStart(2,'0'),tl,e.type==='work'?(e.hrs||0)+'h':'—',(e.loc||'—').substring(0,28),(e.notes||'—').substring(0,22)];
+    const row=[DNAMES[dt.getDay()].replace('E ','')+' '+d+'.'+String(M+1).padStart(2,'0'),tl,e.type==='work'?fmtH(e.hrs||0)+'h':'—',(e.loc||'—').substring(0,28),(e.notes||'—').substring(0,22)];
     cx=mL+3;
     cols.forEach(([,w],ci)=>{
       if(ci===1){doc.setTextColor(...tc);doc.setFont('helvetica','bold');}
@@ -1021,6 +1075,32 @@ function exportPDF(){
 }
 document.getElementById('pdf-btn').onclick=exportPDF;
 
+// Backup / import
+document.getElementById('export-json-btn').onclick=()=>{
+  const name='WorkLog-Backup-'+Y+'-'+String(M+1).padStart(2,'0')+'.json';
+  downloadJSON(name,collectBackup());
+  toast('⬇ Backup u shkarkua');
+};
+document.getElementById('import-json-btn').onclick=()=>document.getElementById('import-file').click();
+document.getElementById('import-file').onchange=async e=>{
+  const f=e.target.files?.[0]; if(!f)return;
+  try{
+    const b=JSON.parse(await f.text());
+    if(confirm('Importi do të zëvendësojë të dhënat aktuale të WorkLog. Vazhdo?')){applyBackup(b);writeSnapshot();toast('⬆ Backup u importua');}
+  }catch{toast('⚠ File JSON jo valid');}
+  e.target.value='';
+};
+document.getElementById('restore-json-btn').onclick=()=>{
+  try{
+    const raw=localStorage.getItem('wr-backup-last');
+    if(!raw){toast('⚠ Nuk ka snapshot për rikthim');return;}
+    if(confirm('Të rikthehet snapshot-i i fundit automatik?')){applyBackup(JSON.parse(raw));toast('↺ Të dhënat u rikthyen');}
+  }catch{toast('⚠ Rikthimi dështoi');}
+};
+document.getElementById('clear-month-btn').onclick=()=>{
+  if(confirm('Fshi të gjitha të dhënat për '+MONTHS[M]+' '+Y+'?')){data={};save();render();toast('Muaji u fshi');}
+};
+
 // Settings
 function updSettings(){
   const s=getR();
@@ -1035,6 +1115,8 @@ function updSettings(){
   else if(perm==='denied'){badge.textContent='✗ Bllokuar';badge.className='nbadge nb-no';pb.style.display='none';tb.style.display='none';}
   else{badge.textContent='? Jo lejo';badge.className='nbadge nb-no';pb.style.display='block';tb.style.display='none';}
   document.getElementById('ios-note').style.display=/iPad|iPhone|iPod/.test(navigator.userAgent)?'block':'none';
+  const at=localStorage.getItem('wr-backup-at');
+  document.getElementById('backup-badge').textContent=at?'Auto ✓':'Auto';
 }
 document.getElementById('rem-tog').onchange=function(){const s=getR();setR(this.checked,s.t);updSettings();schedRem();};
 document.getElementById('rem-time').onchange=function(){const s=getR();setR(s.en,this.value);schedRem();};
@@ -1063,7 +1145,7 @@ document.getElementById('next').onclick=()=>{filterLoc='';if(M===11){Y++;M=0;}el
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(r=>{swR=r;schedRem();}).catch(()=>{});}
 
 // Init
-loadL(); load(); render();
+loadL(); load(); writeSnapshot(); render();
 </script>
 </body>
 </html>

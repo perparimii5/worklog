@@ -1,4 +1,4 @@
-const CACHE = 'raport-mujor-v2';
+const CACHE = 'worklog-pro-v3';
 const FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -23,8 +23,8 @@ self.addEventListener('message', e => {
   if (!e.data) return;
 
   if (e.data.type === 'TEST_NOTIFICATION') {
-    self.registration.showNotification('Raport Mujor', {
-      body: 'Kujtuesi funksionon! Do te njoftohesh cdo dite. ✓',
+    self.registration.showNotification('WorkLog', {
+      body: 'Kujtuesi funksionon. Do te njoftohesh cdo dite. ✓',
       icon: './icon-192.png',
       badge: './icon-192.png',
       vibrate: [200, 100, 200],
@@ -36,8 +36,8 @@ self.addEventListener('message', e => {
     const { delay } = e.data;
     if (delay > 0 && delay < 24 * 60 * 60 * 1000) {
       setTimeout(() => {
-        self.registration.showNotification('Raport Mujor', {
-          body: 'Mos harro te shenosh diten e sotme te punes!',
+        self.registration.showNotification('WorkLog', {
+          body: 'Mos harro te shenosh diten e sotme ne WorkLog.',
           icon: './icon-192.png',
           badge: './icon-192.png',
           vibrate: [300, 100, 300],
