@@ -6,6 +6,7 @@ const key=()=>`wr-${Y}-${String(M+1).padStart(2,'0')}`;
 const DB_NAME='worklog-private-v9-db';
 const STORE='kv';
 let dbPromise=null;
+let cryptoKey=null, privacyUnlocked=false;
 function openDB(){
   if(dbPromise) return dbPromise;
   dbPromise=new Promise((resolve,reject)=>{
@@ -22,14 +23,27 @@ async function idbSet(k,v){const db=await openDB();return new Promise((res,rej)=
 async function idbDel(k){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).delete(k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
 async function idbAll(){const db=await openDB();return new Promise((res,rej)=>{const out={};const cur=db.transaction(STORE,'readonly').objectStore(STORE).openCursor();cur.onsuccess=e=>{const c=e.target.result;if(c){out[c.key]=c.value;c.continue()}else res(out)};cur.onerror=()=>rej(cur.error)})}
 function lightData(obj){return JSON.parse(JSON.stringify(obj||{},(k,v)=>k==='photos'||k==='photo'?undefined:v))}
+const enc=new TextEncoder(), dec=new TextDecoder();
+function privacyEnabled(){return localStorage.getItem('wr-privacy-enabled')==='true'}
+function b64(bytes){const a=new Uint8Array(bytes);let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode(...a.subarray(i,i+0x8000));return btoa(s)}
+function fromB64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
+function randomB64(n=16){const a=new Uint8Array(n);crypto.getRandomValues(a);return b64(a)}
+async function derivePrivacyKey(pass,saltB64){const base=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:fromB64(saltB64),iterations:210000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function encryptValue(value){if(!privacyEnabled())return value;if(!cryptoKey)throw Error('Privacy lock active');const iv=new Uint8Array(12);crypto.getRandomValues(iv);const bytes=enc.encode(JSON.stringify(value||{}));const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,bytes);return{__enc:1,v:1,alg:'AES-GCM',iv:b64(iv),data:b64(cipher)}}
+async function decryptValue(value){if(!value||value.__enc!==1)return value||{};if(!cryptoKey)throw Error('Privacy lock active');const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(value.iv)},cryptoKey,fromB64(value.data));return JSON.parse(dec.decode(plain)||'{}')}
+function parseStored(raw){if(!raw)return{};if(typeof raw==='string'){try{return JSON.parse(raw||'{}')}catch{return{}}}return raw}
+async function readMonthValue(k){const idbRaw=await idbGet(k);if(idbRaw)return decryptValue(idbRaw);return decryptValue(parseStored(localStorage.getItem(k)))}
+async function writeMonthValue(k,value){const stored=await encryptValue(value||{});await idbSet(k,stored);try{localStorage.setItem(k,JSON.stringify(privacyEnabled()?stored:lightData(value||{})))}catch{}return stored}
 async function load(){
-  try{data=await idbGet(key()) || JSON.parse(localStorage.getItem(key())||'{}') || {}}
+  if(privacyEnabled()&&!privacyUnlocked){data={};return}
+  try{data=await readMonthValue(key()) || {}}
   catch{try{data=JSON.parse(localStorage.getItem(key())||'{}')}catch{data={}}}
 }
 async function save(){
-  try{await idbSet(key(),data);await idbSet('wr-backup-last',await collectBackup());localStorage.setItem(key(),JSON.stringify(lightData(data)));localStorage.setItem('wr-storage-mode','IndexedDB');localStorage.setItem('wr-backup-at',new Date().toISOString());}
+  if(privacyEnabled()&&!privacyUnlocked){toast('App është i kyçur');return}
+  try{await writeMonthValue(key(),data);await idbSet('wr-backup-last',await collectBackup());localStorage.setItem('wr-storage-mode',privacyEnabled()?'IndexedDB encrypted':'IndexedDB');localStorage.setItem('wr-backup-at',new Date().toISOString());}
   catch(err){
-    try{localStorage.setItem(key(),JSON.stringify(data));localStorage.setItem('wr-storage-mode','localStorage-fallback');}
+    try{const stored=await encryptValue(data);localStorage.setItem(key(),JSON.stringify(stored));localStorage.setItem('wr-storage-mode',privacyEnabled()?'localStorage encrypted fallback':'localStorage-fallback');}
     catch{toast('Ruajtja dështoi: shumë foto. Eksporto backup dhe fshi disa foto.');throw err}
   }
 }
@@ -40,13 +54,16 @@ async function collectBackup(){
   const months={};
   try{const all=await idbAll();Object.entries(all).forEach(([k,v])=>{if(/^wr-\d{4}-\d{2}$/.test(k))months[k]=v})}catch{}
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)&&!months[k]){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{}}}
-  return{version:'private-v9-indexeddb-safe',exportedAt:new Date().toISOString(),months,settings:{defaultHours:localStorage.getItem('wr-default-hours')||'8',workerName:localStorage.getItem('wr-worker-name')||'',signature:localStorage.getItem('wr-signature')||'',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'}}
+  const settings={defaultHours:localStorage.getItem('wr-default-hours')||'8',workerName:localStorage.getItem('wr-worker-name')||'',signature:localStorage.getItem('wr-signature')||'',reminderOn:localStorage.getItem('rem-en')||'false',reminderTime:localStorage.getItem('rem-t')||'17:00'};
+  return{version:privacyEnabled()?'private-v12-encrypted':'private-v11-indexeddb-safe',exportedAt:new Date().toISOString(),privacy:privacyEnabled()?{enabled:true,salt:localStorage.getItem('wr-privacy-salt')||'',verifier:JSON.parse(localStorage.getItem('wr-privacy-verifier')||'null')}:null,months,settings:privacyEnabled()?await encryptValue(settings):settings}
 }
 async function applyBackup(b){
   if(!b||!b.months)throw Error('Backup jo valid');
   Object.keys(localStorage).filter(k=>/^wr-\d{4}-\d{2}$/.test(k)).forEach(k=>localStorage.removeItem(k));
   for(const [k,v] of Object.entries(b.months)){await idbSet(k,v||{});try{localStorage.setItem(k,JSON.stringify(lightData(v||{})))}catch{}}
-  if(b.settings){localStorage.setItem('wr-default-hours',b.settings.defaultHours||'8');localStorage.setItem('wr-worker-name',b.settings.workerName||'');if(b.settings.signature)localStorage.setItem('wr-signature',b.settings.signature);localStorage.setItem('rem-en',b.settings.reminderOn||'false');localStorage.setItem('rem-t',b.settings.reminderTime||'17:00')}
+  if(b.privacy?.enabled){localStorage.setItem('wr-privacy-enabled','true');localStorage.setItem('wr-privacy-salt',b.privacy.salt||'');localStorage.setItem('wr-privacy-verifier',JSON.stringify(b.privacy.verifier||null));cryptoKey=null;privacyUnlocked=false;showLock(true)}
+  if(b.settings?.__enc){localStorage.setItem('wr-pending-settings',JSON.stringify(b.settings))}
+  else if(b.settings){applyPlainSettings(b.settings)}
   await (async()=>{await load();render();})();
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),2200)}
@@ -162,7 +179,7 @@ async function exportEmployerPDF(){
 
 function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function renderSettings(){document.getElementById('defaultHours').value=localStorage.getItem('wr-default-hours')||'8';const wn=document.getElementById('workerName');if(wn)wn.value=localStorage.getItem('wr-worker-name')||'';loadSignatureCanvas();document.getElementById('reminderOn').checked=localStorage.getItem('rem-en')==='true';document.getElementById('reminderTime').value=localStorage.getItem('rem-t')||'17:00';renderStorageStatus()}
+function renderSettings(){document.getElementById('defaultHours').value=localStorage.getItem('wr-default-hours')||'8';const wn=document.getElementById('workerName');if(wn)wn.value=localStorage.getItem('wr-worker-name')||'';loadSignatureCanvas();document.getElementById('reminderOn').checked=localStorage.getItem('rem-en')==='true';document.getElementById('reminderTime').value=localStorage.getItem('rem-t')||'17:00';renderPrivacyStatus();renderStorageStatus()}
 document.getElementById('defaultHours').onchange=e=>{localStorage.setItem('wr-default-hours',e.target.value||'8');toast('U ruajt')};const workerNameInput=document.getElementById('workerName');if(workerNameInput)workerNameInput.onchange=e=>{localStorage.setItem('wr-worker-name',e.target.value.trim());toast('U ruajt')};document.getElementById('reminderOn').onchange=e=>{localStorage.setItem('rem-en',e.target.checked);scheduleReminder();toast('Reminder u ruajt')};document.getElementById('reminderTime').onchange=e=>{localStorage.setItem('rem-t',e.target.value||'17:00');scheduleReminder();toast('Reminder u ruajt')};
 function scheduleReminder(){if(!('serviceWorker'in navigator)||!('Notification'in window))return;if(Notification.permission==='default')Notification.requestPermission();navigator.serviceWorker.ready.then(reg=>{if(Notification.permission!=='granted'||localStorage.getItem('rem-en')!=='true')return;const [hh,mm]=(localStorage.getItem('rem-t')||'17:00').split(':').map(Number);const target=new Date();target.setHours(hh,mm,0,0);const delay=target-new Date();if(delay>0)reg.active?.postMessage({type:'SCHEDULE_REMINDER',delay})})}
 
@@ -170,6 +187,8 @@ let sigReady=false;
 function loadSignatureCanvas(){const c=document.getElementById('signaturePad');if(!c||sigReady)return;sigReady=true;const resize=()=>{const old=localStorage.getItem('wr-signature');const w=c.clientWidth||c.parentElement?.clientWidth||320;const h=c.clientHeight||120;c.width=w*2;c.height=h*2;const ctx=c.getContext('2d');ctx.scale(2,2);ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#f7f8fb';if(old){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,w,h);img.src=old}};resize();let drawing=false,last=null;const pos=e=>{const r=c.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};const start=e=>{drawing=true;last=pos(e);e.preventDefault()};const move=e=>{if(!drawing)return;const p=pos(e),ctx=c.getContext('2d');ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault()};const end=()=>drawing=false;c.addEventListener('mousedown',start);c.addEventListener('mousemove',move);window.addEventListener('mouseup',end);c.addEventListener('touchstart',start,{passive:false});c.addEventListener('touchmove',move,{passive:false});c.addEventListener('touchend',end)}
 function saveSignature(){const c=document.getElementById('signaturePad');if(c){localStorage.setItem('wr-signature',c.toDataURL('image/png'));toast('Firma u ruajt')}}
 function clearSignature(){const c=document.getElementById('signaturePad');if(c){c.getContext('2d').clearRect(0,0,c.width,c.height);localStorage.removeItem('wr-signature');toast('Firma u pastrua')}}
+function applyPlainSettings(s){localStorage.setItem('wr-default-hours',s.defaultHours||'8');localStorage.setItem('wr-worker-name',s.workerName||'');if(s.signature)localStorage.setItem('wr-signature',s.signature);localStorage.setItem('rem-en',s.reminderOn||'false');localStorage.setItem('rem-t',s.reminderTime||'17:00')}
+async function restorePendingSettings(){const raw=localStorage.getItem('wr-pending-settings');if(!raw)return;try{applyPlainSettings(await decryptValue(parseStored(raw)));localStorage.removeItem('wr-pending-settings')}catch{}}
 
 async function storageSnapshot(){
   const months={};
@@ -177,14 +196,16 @@ async function storageSnapshot(){
   try{Object.assign(months,await idbAll())}catch{storageMode='localStorage-fallback'}
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)&&!months[k]){try{months[k]=JSON.parse(localStorage.getItem(k)||'{}')}catch{}}}
   let monthCount=0,entryCount=0,photoCount=0,bytes=0;
-  Object.entries(months).forEach(([k,v])=>{
-    if(!/^wr-\d{4}-\d{2}$/.test(k))return;
+  for(const [k,raw] of Object.entries(months)){
+    if(!/^wr-\d{4}-\d{2}$/.test(k))continue;
     monthCount++;
+    let v=raw;
+    try{v=await decryptValue(raw)}catch{v={}}
     const entries=Object.values(v||{});
     entryCount+=entries.length;
     entries.forEach(e=>photoCount+=normalizePhotos(e.photos||e.photo||[]).length);
-    try{bytes+=new Blob([JSON.stringify(v)]).size}catch{}
-  });
+    try{bytes+=new Blob([JSON.stringify(raw)]).size}catch{}
+  }
   return{storageMode,monthCount,entryCount,photoCount,bytes,backupAt:localStorage.getItem('wr-backup-at')||''};
 }
 function humanBytes(n){if(!n)return'0 KB';if(n<1024*1024)return Math.max(1,Math.round(n/1024))+' KB';return(n/1024/1024).toFixed(1).replace('.',',')+' MB'}
@@ -204,4 +225,40 @@ function renderTodayNotice(){
 }
 
 if('serviceWorker'in navigator){navigator.serviceWorker.register('sw.js').then(scheduleReminder).catch(()=>{})}
-(async()=>{await load();render();})();
+function showLock(on){const w=document.getElementById('lockWrap');if(w)w.classList.toggle('on',on)}
+async function verifyPrivacyPass(pass){const salt=localStorage.getItem('wr-privacy-salt');const verifier=parseStored(localStorage.getItem('wr-privacy-verifier'));if(!salt||!verifier)throw Error('Privacy nuk është konfiguruar');const key=await derivePrivacyKey(pass,salt);const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(verifier.iv)},key,fromB64(verifier.data));if(dec.decode(plain)!=='worklog-private-verifier-v1')throw Error('Fjalëkalim i gabuar');cryptoKey=key;privacyUnlocked=true;return true}
+async function createVerifier(key){const iv=new Uint8Array(12);crypto.getRandomValues(iv);const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode('worklog-private-verifier-v1'));return{iv:b64(iv),data:b64(cipher)}}
+async function setPrivacyPassword(pass){
+  const salt=randomB64(16);const key=await derivePrivacyKey(pass,salt);const verifier=await createVerifier(key);
+  cryptoKey=key;privacyUnlocked=true;localStorage.setItem('wr-privacy-enabled','true');localStorage.setItem('wr-privacy-salt',salt);localStorage.setItem('wr-privacy-verifier',JSON.stringify(verifier));
+}
+async function migrateAllMonths(encryptOn){
+  const raw={};try{Object.assign(raw,await idbAll())}catch{}
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^wr-\d{4}-\d{2}$/.test(k)&&!raw[k])raw[k]=parseStored(localStorage.getItem(k))}
+  for(const [k,v] of Object.entries(raw)){if(!/^wr-\d{4}-\d{2}$/.test(k))continue;const plain=await decryptValue(v);const stored=encryptOn?await encryptValue(plain):plain;await idbSet(k,stored);try{localStorage.setItem(k,JSON.stringify(encryptOn?stored:lightData(plain)))}catch{}}
+  const current=encryptOn?await encryptValue(data):data;await idbSet(key(),current);try{localStorage.setItem(key(),JSON.stringify(encryptOn?current:lightData(data)))}catch{}
+}
+async function enablePrivacy(){
+  if(!crypto.subtle){toast('Ky browser nuk mbështet WebCrypto');return}
+  const p=document.getElementById('privacyPass')?.value||'', p2=document.getElementById('privacyPass2')?.value||'';
+  if(p.length<6){toast('Përdor minimum 6 karaktere');return}
+  if(p!==p2){toast('Fjalëkalimet nuk përputhen');return}
+  try{await setPrivacyPassword(p);await migrateAllMonths(true);document.getElementById('privacyPass').value='';document.getElementById('privacyPass2').value='';localStorage.setItem('wr-storage-mode','IndexedDB encrypted');render();toast('Privacy Lock u aktivizua')}catch(e){toast('Aktivizimi dështoi')}
+}
+async function unlockApp(){
+  const p=document.getElementById('unlockPass')?.value||'';if(!p){toast('Shkruaj fjalëkalimin');return}
+  try{await verifyPrivacyPass(p);await restorePendingSettings();document.getElementById('unlockPass').value='';showLock(false);await load();render();toast('U hap')}catch(e){toast('Fjalëkalim i gabuar')}
+}
+function lockApp(){if(!privacyEnabled()){toast('Privacy Lock nuk është aktiv');return}cryptoKey=null;privacyUnlocked=false;data={};showLock(true);toast('App u kyç')}
+async function disablePrivacy(){
+  if(!privacyEnabled()){toast('Privacy Lock nuk është aktiv');return}
+  if(!privacyUnlocked){toast('Hape app-in para çaktivizimit');return}
+  if(!confirm('A do ta çaktivizosh Privacy Lock? Të dhënat do ruhen pa kriptim.'))return;
+  try{await migrateAllMonths(false);localStorage.removeItem('wr-privacy-enabled');localStorage.removeItem('wr-privacy-salt');localStorage.removeItem('wr-privacy-verifier');cryptoKey=null;privacyUnlocked=false;localStorage.setItem('wr-storage-mode','IndexedDB');render();toast('Privacy Lock u çaktivizua')}catch{toast('Çaktivizimi dështoi')}
+}
+function renderPrivacyStatus(){
+  const box=document.getElementById('privacyRows');if(!box)return;box.textContent='';
+  [['Statusi',privacyEnabled()?(privacyUnlocked?'Aktiv, i hapur':'Aktiv, i kyçur'):'Jo aktiv'],['Kriptimi',privacyEnabled()?'AES-GCM lokal':'Jo aktiv']].forEach(([label,value])=>{const row=makeEl('div','row');row.appendChild(makeEl('span','',label));row.appendChild(makeEl('b','',value));box.appendChild(row)});
+}
+async function init(){if(privacyEnabled()){showLock(true);renderPrivacyStatus();return}privacyUnlocked=true;await load();render()}
+init();
