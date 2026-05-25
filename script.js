@@ -33,6 +33,7 @@ async function save(){
     catch{toast('Ruajtja dështoi: shumë foto. Eksporto backup dhe fshi disa foto.');throw err}
   }
 }
+const vibe=t=>{if(navigator.vibrate){if(t==='light')navigator.vibrate(10);else if(t==='med')navigator.vibrate(25);else if(t==='heavy')navigator.vibrate(50);else if(t==='error')navigator.vibrate([40,30,40]);}};
 const fmtH=v=>{const n=Number(v||0);return Number.isInteger(n)?n:n.toFixed(1).replace('.',',')};
 const daysInMonth=()=>new Date(Y,M+1,0).getDate();
 const offset=()=>{const d=new Date(Y,M,1).getDay();return(d+6)%7};
@@ -91,21 +92,22 @@ function renderStats(){
 function renderTimeline(){const box=document.getElementById('timeline');box.innerHTML='';const items=Object.entries(data).map(([d,e])=>({d:Number(d),e})).sort((a,b)=>b.d-a.d);if(!items.length){box.innerHTML='<div class="empty">Ende nuk ka regjistrime për këtë muaj.<br>Prek + për të shtuar ditën e parë.</div>';return}items.forEach(({d,e})=>{const dt=new Date(Y,M,d);const photos=normalizePhotos(e.photos||e.photo||[]);const pc=photos.length;const spc=photos.filter(p=>p.selected!==false).length;const div=document.createElement('article');div.className='entry';div.onclick=()=>openDay(d);div.innerHTML=`<div class="datepill"><div><b>${d}</b><span>${DOWS[dt.getDay()]}</span></div></div><div><h3>${typeName(e.type)} ${e.type==='work'&&e.hrs?'· '+fmtH(e.hrs)+'h':''}</h3><p>${[e.job,e.loc,e.notes].filter(Boolean).join(' · ')||'Pa shënime'}</p><div class="meta">${e.job?`<span class="chip"># ${escapeHtml(e.job)}</span>`:''}${e.loc?`<span class="chip">📍 ${escapeHtml(e.loc)}</span>`:''}${e.gps?`<span class="chip">GPS ✓</span>`:''}${pc?`<span class="chip">📷 ${spc}/${pc}</span>`:''}</div></div>`;box.appendChild(div)})}
 function renderCalendar(){const g=document.getElementById('calGrid');g.innerHTML='';for(let i=0;i<offset();i++){const e=document.createElement('div');e.className='day emptyday';g.appendChild(e)}for(let d=1;d<=daysInMonth();d++){const e=data[d];const cell=document.createElement('button');cell.className='day '+(e?'has ':'')+(d===now.getDate()&&M===now.getMonth()&&Y===now.getFullYear()?'today':'');cell.onclick=()=>openDay(d);cell.innerHTML=`<b>${d}</b>${e?`<i class="dot ${e.type}"></i>${e.type==='work'?`<span class="hrs">${fmtH(e.hrs)}h</span>`:''}`:''}`;g.appendChild(cell)}}
 async function moveMonth(n){M+=n;if(M<0){M=11;Y--}if(M>11){M=0;Y++}await load();render()}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));document.getElementById(b.dataset.view).classList.add('on')});
-function openSettings(){document.querySelector('[data-view="settings"]').click()}
-function openDay(d){selectedDay=d;const e=data[d]||{};selectedPhotos=normalizePhotos(e.photos||e.photo||[]);selectedGPS=e.gps||null;document.getElementById('sheetTitle').textContent='Dita '+d;document.getElementById('sheetSub').textContent=DOW[new Date(Y,M,d).getDay()]+' · '+MONTHS[M];document.querySelectorAll('.typebtn').forEach(b=>{b.classList.toggle('on',(e.type||'work')===b.dataset.type)});document.getElementById('hoursInput').value=e.hrs??(localStorage.getItem('wr-default-hours')||8);document.getElementById('jobInput').value=e.job||'';document.getElementById('locInput').value=e.loc||'';document.getElementById('notesInput').value=e.notes||'';renderQuickHours();renderPhotos();renderGPS();updateHoursBox();document.getElementById('sheetWrap').classList.add('on')}
-function closeSheet(){document.getElementById('sheetWrap').classList.remove('on');selectedDay=null}
-document.querySelectorAll('.typebtn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.typebtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');updateHoursBox()});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{vibe('light');document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));document.getElementById(b.dataset.view).classList.add('on')});
+function openSettings(){vibe('light');document.querySelector('[data-view="settings"]').click()}
+function openDay(d){vibe('med');selectedDay=d;const e=data[d]||{};selectedPhotos=normalizePhotos(e.photos||e.photo||[]);selectedGPS=e.gps||null;document.getElementById('sheetTitle').textContent='Dita '+d;document.getElementById('sheetSub').textContent=DOW[new Date(Y,M,d).getDay()]+' · '+MONTHS[M];document.querySelectorAll('.typebtn').forEach(b=>{b.classList.toggle('on',(e.type||'work')===b.dataset.type)});document.getElementById('hoursInput').value=e.hrs??(localStorage.getItem('wr-default-hours')||8);document.getElementById('jobInput').value=e.job||'';document.getElementById('locInput').value=e.loc||'';document.getElementById('notesInput').value=e.notes||'';renderQuickHours();renderPhotos();renderGPS();updateHoursBox();document.getElementById('sheetWrap').classList.add('on')}
+function closeSheet(){vibe('light');document.getElementById('sheetWrap').classList.remove('on');selectedDay=null}
+document.querySelectorAll('.typebtn').forEach(b=>b.onclick=()=>{vibe('light');document.querySelectorAll('.typebtn').forEach(x=>x.classList.remove('on'));b.classList.add('on');updateHoursBox()});
 function currentType(){return document.querySelector('.typebtn.on')?.dataset.type||'work'}
 function updateHoursBox(){document.getElementById('hoursBox').style.display=currentType()==='work'?'block':'none'}
 function renderQuickHours(){const q=document.getElementById('quickHours');q.innerHTML='';[4,6,7,7.5,8,8.5,9,10].forEach(v=>{const b=document.createElement('button');b.textContent=fmtH(v)+'h';b.onclick=()=>{document.getElementById('hoursInput').value=v;renderQuickHours()};b.classList.toggle('on',Number(document.getElementById('hoursInput').value)===v);q.appendChild(b)})}
 document.getElementById('hoursInput').oninput=renderQuickHours;
 document.getElementById('photoInput').onchange=async e=>{const files=[...(e.target.files||[])];if(!files.length)return;toast('Po kompresohen fotot...');for(const f of files){try{const src=await compressImage(f,1400,.78);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}catch{const src=await fileToDataURL(f);selectedPhotos.push({src,selected:true,addedAt:new Date().toISOString(),name:f.name||'foto'});}}renderPhotos();toast(files.length+' foto u shtuan');e.target.value=''};
 function renderPhotos(){const g=document.getElementById('photosGrid');g.innerHTML='';selectedPhotos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo '+(p.selected===false?'off':'');d.innerHTML=`<img src="${p.src}"><button type="button" class="sel">${p.selected===false?'○':'✓'}</button><button type="button" class="x">×</button>`;d.querySelector('.sel').onclick=()=>{selectedPhotos[i].selected=selectedPhotos[i].selected===false?true:false;renderPhotos()};d.querySelector('.x').onclick=()=>{selectedPhotos.splice(i,1);renderPhotos()};g.appendChild(d)});if(!selectedPhotos.length)g.innerHTML='<div class="tiny" style="grid-column:1/-1">Asnjë foto. Fotot e selektuara me ✓ futen në PDF Employer.</div>'}
-async function saveDay(){const t=currentType();data[selectedDay]={type:t,hrs:t==='work'?Math.max(0,Math.min(24,Math.round(Number(document.getElementById('hoursInput').value||0)*2)/2)):0,job:document.getElementById('jobInput').value.trim(),loc:document.getElementById('locInput').value.trim(),notes:document.getElementById('notesInput').value.trim(),gps:selectedGPS,photos:selectedPhotos};await save();closeSheet();render();toast('U ruajt')}
+async function saveDay(){const t=currentType();data[selectedDay]={type:t,hrs:t==='work'?Math.max(0,Math.min(24,Math.round(Number(document.getElementById('hoursInput').value||0)*2)/2)):0,job:document.getElementById('jobInput').value.trim(),loc:document.getElementById('locInput').value.trim(),notes:document.getElementById('notesInput').value.trim(),gps:selectedGPS,photos:selectedPhotos};await save();vibe('heavy');closeSheet();render();toast('U ruajt')}
 async function deleteDay(){
   if(selectedDay&&data[selectedDay]){
     if(!confirm('A jeni i sigurt që dëshironi të fshini këtë ditë?')) return;
+    vibe('heavy');
     delete data[selectedDay];
     await save();
     closeSheet();
@@ -116,6 +118,7 @@ async function deleteDay(){
 
 async function clearAllData(){
   if(!confirm('A jeni i sigurt që dëshironi të fshini TË GJITHA të dhënat e këtij muaji? Kjo nuk mund të kthehet prapa.')) return;
+  vibe('heavy');
   data={};
   await save();
   render();
